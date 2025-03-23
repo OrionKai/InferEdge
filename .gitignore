@@ -1,2 +1,6 @@
 inputs/*
 models/*
+libtorch/*
+rust/native
+prometheus/prometheus
+cadvisor/cadvisor
