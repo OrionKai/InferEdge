@@ -17,6 +17,8 @@ scripts_dir = os.path.abspath(os.path.dirname(__file__))
 
 # The absolute path of the parent "Benchmark" directory
 benchmark_dir = os.path.abspath(os.path.join(scripts_dir, ".."))
+# Right now benchmark_dir = scripts_dir because putting this script in the scripts_dir
+# caused path problems, so this script is currently on the root level of the Benchmark directory
 benchmark_dir = scripts_dir
 
 # Path to the WebAssembly binary
@@ -37,12 +39,12 @@ def read_perf_config(config_path):
 
 PERF_EVENTS = read_perf_config(CADVISOR_PERF_CONFIG_PATH)
 
-# Path to the cAdvisor binary
+# Path to the cAdvisor, Prometheus binaries
 CADVISOR_BINARY_PATH = f"{benchmark_dir}/cadvisor/cadvisor"
-
-NATIVE_BINARY_NAME = "torch_image_classification"
+PROMETHEUS_BINARY_PATH = f"{benchmark_dir}/prometheus/prometheus"
 
 # Path to the native-compiled code
+NATIVE_BINARY_NAME = "torch_image_classification"
 NATIVE_BINARY_PATH = f"{benchmark_dir}/native/{NATIVE_BINARY_NAME}"
 
 # Container and image names
@@ -56,7 +58,9 @@ CONTAINER_STOP_CMD="sudo docker stop {container_name}"
 CONTAINER_REMOVE_CMD="sudo docker rm {container_name}"
 CONTAINER_INSPECT_ID_CMD="sudo docker inspect -f '{{{{.Id}}}}' {container_name}"
 
-# Commands to start and stop cAdvisor
+# Commands to start and stop Prometheus, cAdvisor
+PROMETHEUS_START_CMD = f"sudo {PROMETHEUS_BINARY_PATH} --config.file={benchmark_dir}/prometheus/prometheus.yml --web.enable-admin-api" 
+PROMETHEUS_STOP_CMD = f"sudo pkfill -f {PROMETHEUS_BINARY_PATH}"
 CADVISOR_START_CMD = f"sudo {CADVISOR_BINARY_PATH} -perf_events_config={CADVISOR_PERF_CONFIG_PATH}"
 CADVISOR_STOP_CMD = f"sudo pkill -f {CADVISOR_BINARY_PATH}"
 
@@ -160,8 +164,8 @@ CREATE_CGROUP_CMD=f"sudo cgcreate -g memory:{CUSTOM_CGROUP_NAME}"
 EXEC_IN_CGROUP_CMD_PREFIX=f"sudo LD_LIBRARY_PATH={LD_LIBRARY_PATH} PATH={PATH} cgexec -g memory:{CUSTOM_CGROUP_NAME}"
 DELETE_CGROUP_CMD=f"sudo cgdelete -g memory:{CUSTOM_CGROUP_NAME}"
 
-# Variable tracking whether cAdvisor is currently running or not
-cadvisor_running = False
+# Variable tracking whether cAdvisor and Prometheus are currently running or not
+cadvisor_and_prometheus_running = False
 
 def is_cgroup_v2():
     return os.path.isfile("/sys/fs/cgroup/cgroup.controllers")
@@ -309,7 +313,7 @@ def write_metrics_to_csv(results_filename, field_names, metrics):
 
 # time_metrics is unused, only need it so can pass as function
 def run_container_max_rss_experiment(cmd, time_metrics):
-    start_cadvisor_if_not_running()
+    start_cadvisor_and_prometheus_if_not_running()
     cmd = TIME_CMD_PREFIX.split() + cmd.split()
     time_output = run_shell_cmd_and_get_stderr(cmd)
     time_metrics = [MAX_RSS_TIME_IDENTIFIER_AND_SHORTHAND]
@@ -325,7 +329,7 @@ def run_container_max_rss_experiment(cmd, time_metrics):
     return [("", trial_metrics)] 
 
 def run_time_experiment(cmd, time_metrics):
-    stop_cadvisor_if_running()
+    stop_cadvisor_and_prometheus_if_running()
     cmd = TIME_CMD_PREFIX.split() + cmd.split()
     time_output = run_shell_cmd_and_get_stderr(cmd)
 
@@ -469,30 +473,45 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
 
 #TODO: do start, stop prometheus too
 
-def start_cadvisor():
-    run_shell_cmd_in_background(CADVISOR_START_CMD.split())
+def start_cadvisor_and_prometheus():
+    start_cadvisor()
+    start_prometheus()
     time.sleep(3)
 
-def start_cadvisor_if_not_running():
-    global cadvisor_running
-    if not cadvisor_running:
-        start_cadvisor()
-        cadvisor_running = True
+def start_prometheus():
+    run_shell_cmd(PROMETHEUS_START_CMD.split())
+
+def start_cadvisor():
+    run_shell_cmd_in_background(CADVISOR_START_CMD.split())
+
+def start_cadvisor_and_prometheus_if_not_running():
+    global cadvisor_and_prometheus_running
+    if not cadvisor_and_prometheus_running:
+        start_cadvisor_and_prometheus()
+        cadvisor_and_prometheus_running = True
 
 # Need to stop it whenever we are about to run an experiment using perf stat,
 # since otherwise perf stat cannot access the performance counters cAdvisor
 # is using
+
+def stop_cadvisor_and_prometheus():
+    stop_cadvisor()
+    stop_prometheus()   
+
+def stop_prometheus():
+    run_shell_cmd(PROMETHEUS_STOP_CMD.split())
+
 def stop_cadvisor():
     run_shell_cmd(CADVISOR_STOP_CMD.split())
 
-def stop_cadvisor_if_running():
-    global cadvisor_running
-    if cadvisor_running:
-        stop_cadvisor()
-        cadvisor_running = False
+def stop_cadvisor_and_prometheus_if_running():
+    global cadvisor_and_prometheus_running
+    if cadvisor_and_prometheus_running:
+        stop_cadvisor_and_prometheus()
+        cadvisor_and_prometheus_running = False
 
 def run_non_container_perf_and_memory_experiment(perf_events, cmd): 
-    start_cadvisor_if_not_running()
+    start_cadvisor_and_prometheus_if_not_running()
 
     # Create the cgroup that the  process will be assigned to
     run_shell_cmd(CREATE_CGROUP_CMD.split())
@@ -521,7 +540,7 @@ def run_non_container_perf_and_memory_experiment(perf_events, cmd):
     return [("", metrics)]
 
 def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, container_start_cmd):
-    start_cadvisor_if_not_running()
+    start_cadvisor_and_prometheus_if_not_running()
 
     start_container_time = datetime.utcnow()
     start_container_timestamp = start_container_time.timestamp()
