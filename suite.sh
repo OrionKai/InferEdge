@@ -6,7 +6,7 @@ export PYTORCH_ABI="libtorch-cxx11-abi"
 export PROMETHEUS_VERSION="3.2.1"
 export SUITE_NAME="CS4099Suite"
 
-main() {
+function main() {
     if [ "$#" -ne 3 ]; then
         echo "Usage: $0 <target address> <target username> <target password>"
         exit 1
@@ -19,7 +19,7 @@ main() {
     prompt_user_for_architecture
 
     # If target architecture is aarch64, set up QEMU
-    if [ "$target_architecture" = "aarch64" ]; then
+    if [ "$arch" = "arm64" ]; then
         echo "Setting up QEMU for aarch64..."
         docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
     fi
@@ -35,8 +35,8 @@ function prompt_user_for_architecture() {
         local arch_input
         read -p "Enter the number identifying the architecture: " arch_input
         case $arch_input in
-            1) target_architecture="x86_64" ;;
-            2) target_architecture="aarch64" ;;
+            1) arch="amd64" ;;
+            2) arch="arm64" ;;
             *) echo "Invalid option." ;;
         esac
     done
@@ -81,33 +81,32 @@ function prompt_user_for_specific_actions() {
 }
 
 function acquire_files() {
-    case $target_architecture in
-        "aarch64") acquire_files_aarch64 ;;
-        "x86_64") acquire_files_x86_64 ;;
+    case $arch in
+        "arm64") acquire_files_arm64 ;;
+        "amd64") acquire_files_amd64 ;;
     esac
 }
 
-function acquire_files_aarch64() {
-    build_wasmedge "arm64" "wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps" 
-    download_libtorch_aarch64
-    build_cadvisor "arm64"
-    download_prometheus "arm64"
-    build_docker_and_native "arm64"
+function acquire_files_arm64() {
+    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps" 
+    download_libtorch_arm64
+    build_cadvisor 
+    download_prometheus
+    build_docker_and_native 
     compile_wasm
 }
 
-function acquire_files_x86_64() {
-    build_wasmedge "amd64" "wasmedge/wasmedge:manylinux_2_28_x86_64-plugins-deps"
-    download_libtorch_x86_64
-    build_cadvisor "amd64"
-    download_prometheus "amd64"
-    build_docker_and_native "amd64"
+function acquire_files_amd64() {
+    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_x86_64-plugins-deps"
+    download_libtorch_amd64
+    build_cadvisor 
+    download_prometheus 
+    build_docker_and_native 
     compile_wasm
 }
 
 function build_wasmedge() {
-    local arch="$1"       # e.g. arm64 or amd64
-    local image="$2"          # e.g. wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps
+    local image="$1"          # e.g. wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps
 
     local platform="linux/$arch"
 
@@ -142,7 +141,7 @@ function build_wasmedge() {
     docker rm "$container_id"
 }
 
-function download_libtorch_aarch64() {
+function download_libtorch_arm64() {
     local build_dir="libtorch"
 
     # Download and extract libtorch
@@ -155,7 +154,7 @@ function download_libtorch_aarch64() {
     rm -rf torch_unzipped
 }
 
-function download_libtorch_x86_64() {
+function download_libtorch_amd64() {
     # Download and extract libtorch
     export TORCH_LINK="https://download.pytorch.org/libtorch/cpu/${PYTORCH_ABI}-shared-with-deps-${PYTORCH_VERSION}%2Bcpu.zip" && \
     curl -s -L -o torch.zip $TORCH_LINK && \
@@ -164,8 +163,6 @@ function download_libtorch_x86_64() {
 }
 
 function build_cadvisor() {
-    local arch=$1 # e.g. arm64 or amd64
-
     local image_name="cadvisor-build:$arch"
     local build_dir="cadvisor"
     mkdir -p "$build_dir"
@@ -183,8 +180,6 @@ function build_cadvisor() {
 }
 
 function download_prometheus() {
-    local arch=$1 # e.g. arm64 or amd64
-
     local url="https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-${arch}.tar.gz"
     local output_file="prometheus.tar.gz"
     local extract_dir="prometheus-${PROMETHEUS_VERSION}.linux-${arch}"
@@ -200,8 +195,6 @@ function download_prometheus() {
 }
 
 function build_docker_and_native() {
-    local arch=$1 # e.g. arm64 or amd64
-    
     local image_name="image-classification:$arch"
 
     # Build the Docker container 
@@ -241,7 +234,7 @@ function transfer_suite_files() {
     ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/$SUITE_NAME"
 
     # Transfer the suite files to the target machine
-    scp -r models inputs native wasm libtorch cadvisor prometheus docker data_scripts/collect_data.py \
+    scp -r models inputs native wasm libtorch cadvisor prometheus python docker data_scripts/collect_data.py \
         "$target_username"@"$target_address":/home/"$target_username"/"$SUITE_NAME"
 
     # Create a directory in the suite directory to store results 
@@ -258,6 +251,26 @@ function transfer_wasmedge_files() {
 
 function setup_target_machine() {
     ssh "$target_username@$target_address" 'bash -s' < target_scripts/setup.sh
+}
+
+function run_data_collection() {
+    local set_name
+    read -p "Enter a name to identify this set of experiments: " set_name
+
+    ssh "$target_username@$target_address" 'bash -s' < target_scripts/collect_data.sh
+}
+
+function retrieve_data_collection_results() {
+    local set_name
+    read -p "Enter the name of the set of experiments to retrieve results from: " set_name
+
+    scp -r "$target_username@$target_address:/home/$target_username/$SUITE_NAME/results/$set_name" results
+}
+
+function run_data_analysis() {
+    local set_name
+    read -p "Enter the name of the set of experiments to analyze: " set_name
+    host_scripts/analyze_data.sh results/$set_name false
 }
 
 main()
