@@ -3,10 +3,7 @@ scrape_configs:
   scrape_interval: 1s
   static_configs:
   - targets:
-    - host.docker.internal:8080 
-    # Since Prometheus is running in a container, we must use
-    # the Pi's address vs localhost which refers to the container
-    # TODO: parameterize this URL
+    - localhost:8080 
 
 rule_files:
   - "recording_rules.yml" 

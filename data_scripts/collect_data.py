@@ -10,12 +10,15 @@ import os
 import argparse
 import time
 from datetime import datetime
+from sys import platform
 
 # The absolute path of the "scripts" directory where this script is in
 scripts_dir = os.path.abspath(os.path.dirname(__file__))
 
 # The absolute path of the parent "Benchmark" directory
 benchmark_dir = os.path.abspath(os.path.join(scripts_dir, ".."))
+# Right now benchmark_dir = scripts_dir because putting this script in the scripts_dir
+# caused path problems, so this script is currently on the root level of the Benchmark directory
 benchmark_dir = scripts_dir
 
 # Path to the WebAssembly binary
@@ -23,45 +26,46 @@ WASM_BINARY_PATH = os.path.expanduser("~/.wasmedge/bin/wasmedge")
 
 # Path to the WebAssembly files
 INTERPRETED_WASM_FILE_PATH = f"{benchmark_dir}/wasm/interpreted.wasm"
-# TODO: parameterize if .wasm or .so
-AOT_WASM_FILE_PATH = f"{benchmark_dir}/wasm/aot.wasm"
+AOT_WASM_FILE_PATH_TEMPLATE = f"{benchmark_dir}/wasm/aot.{{extension}}"
 
 # Path to cAdvisor perf events config file
-# TODO: synch perf_config.json with PERF_EVENTS
-CADVISOR_PERF_CONFIG_PATH = f"{benchmark_dir}/cadvisor/perf_config_more_memory.json"
+CADVISOR_PERF_CONFIG_PATH = f"{benchmark_dir}/cadvisor/perf_config.json"
 
-# Path to the cAdvisor binary
+# The list of perf events to measure
+def read_perf_config(config_path):
+    with open(config_path, "r") as f:
+        config = json.load(f)
+        return config.get("core").get("events")
+
+PERF_EVENTS = read_perf_config(CADVISOR_PERF_CONFIG_PATH)
+
+# Path to the cAdvisor, Prometheus binaries
 CADVISOR_BINARY_PATH = f"{benchmark_dir}/cadvisor/cadvisor"
-
-NATIVE_BINARY_NAME = "torch_image_classification"
+PROMETHEUS_BINARY_PATH = f"{benchmark_dir}/prometheus/prometheus"
 
 # Path to the native-compiled code
+NATIVE_BINARY_NAME = "torch_image_classification"
 NATIVE_BINARY_PATH = f"{benchmark_dir}/native/{NATIVE_BINARY_NAME}"
 
 # Container and image names
 CONTAINER_NAME="benchmarked-container"
-# TODO: parameterize architecture
-ARCHITECTURE = "arm64"
-IMG_NAME=f"image-classification:{ARCHITECTURE}"         
+IMG_NAME_TEMPLATE="image-classification:{arch}"         
 
 # The command to start the container
-CONTAINER_START_CMD=f"sudo docker run --privileged --name {CONTAINER_NAME} {IMG_NAME}"
+CONTAINER_START_CMD_TEMPLATE=f"sudo docker run --privileged --name {CONTAINER_NAME} {{img_name}}"
 
 CONTAINER_STOP_CMD="sudo docker stop {container_name}"
 CONTAINER_REMOVE_CMD="sudo docker rm {container_name}"
 CONTAINER_INSPECT_ID_CMD="sudo docker inspect -f '{{{{.Id}}}}' {container_name}"
 
-
-# Commands to start and stop cAdvisor
+# Commands to start and stop Prometheus, cAdvisor
+PROMETHEUS_START_CMD = f"sudo {PROMETHEUS_BINARY_PATH} --config.file={benchmark_dir}/prometheus/prometheus.yml --web.enable-admin-api" 
+PROMETHEUS_STOP_CMD = f"sudo pkfill -f {PROMETHEUS_BINARY_PATH}"
 CADVISOR_START_CMD = f"sudo {CADVISOR_BINARY_PATH} -perf_events_config={CADVISOR_PERF_CONFIG_PATH}"
 CADVISOR_STOP_CMD = f"sudo pkill -f {CADVISOR_BINARY_PATH}"
 
 # Command to clear OS-level caches
 CLEAR_CACHE_CMD = "sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'"
-
-# The list of perf events to measure
-PERF_EVENTS = ["instructions", "cpu-cycles", "cache-references", "cache-misses", "page-faults",
-    "bus-cycles", "branch-instructions", "branch-misses", "major-faults", "minor-faults"]
 
 LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH")
 PATH = os.environ.get("PATH")
@@ -86,7 +90,6 @@ TIME_METRICS = [("Elapsed (wall clock) time", "wall-time-seconds"),
     MAX_RSS_TIME_IDENTIFIER_AND_SHORTHAND]
 
 # The endpoint that Prometheus is listening on
-# TODO: parameterize this
 PROMETHEUS_URL="http://localhost:9090"
 
 # The name of the files to store results in
@@ -156,22 +159,25 @@ PROMETHEUS_DOCKER_COMBINED_PERF_AND_MEMORY_QUERIES = ["""sum by (event) (increas
 PROMETHEUS_DOCKER_DAEMON_MEMORY_QUERY = "container_memory_usage_bytes{{id='/system.slice/docker.service'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f}"
 PROMETHEUS_DOCKER_CONTAINER_MEMORY_QUERY = "container_memory_usage_bytes{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f}"
 
-# The commands used to start a custom cgroup and execute a command in it TODO: ensure this is being cleared/refreshed between trials
+# The commands used to start a custom cgroup and execute a command in it
 CREATE_CGROUP_CMD=f"sudo cgcreate -g memory:{CUSTOM_CGROUP_NAME}"
 EXEC_IN_CGROUP_CMD_PREFIX=f"sudo LD_LIBRARY_PATH={LD_LIBRARY_PATH} PATH={PATH} cgexec -g memory:{CUSTOM_CGROUP_NAME}"
 DELETE_CGROUP_CMD=f"sudo cgdelete -g memory:{CUSTOM_CGROUP_NAME}"
 
-# Variable tracking whether cAdvisor is currently running or not
-cadvisor_running = False
+# Variable tracking whether cAdvisor and Prometheus are currently running or not
+cadvisor_and_prometheus_running = False
 
 def is_cgroup_v2():
     return os.path.isfile("/sys/fs/cgroup/cgroup.controllers")
+
+def is_mac():
+    return platform == "darwin"
 
 # Because collect_time_data only measures max RSS of the Docker command
 # used to tell the daemon to create the container, we need this experiment here to 
 # get accurate max RSS metrics for Docker
 def collect_time_data(n, time_metrics, results_filename, docker_run_experiment_function,
-    non_container_run_experiment_function, container_exec_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
+    non_container_run_experiment_function, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
     mechanisms=["docker","wasm_interpreted","wasm_aot","native"]):
     time_metrics_short_names = [time_metric[1] for time_metric in time_metrics]
 
@@ -208,7 +214,7 @@ def collect_time_data(n, time_metrics, results_filename, docker_run_experiment_f
             docker_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = docker_run_experiment_function(CONTAINER_START_CMD + " " + container_exec_cmd, time_metrics)
+                    trial_metrics = docker_run_experiment_function(container_start_cmd + " " + container_exec_cmd, time_metrics)
                     remove_container(CONTAINER_NAME)
                     trial_metrics_rows = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, time_metrics_short_names)
                     metrics.extend(trial_metrics_rows)
@@ -307,7 +313,7 @@ def write_metrics_to_csv(results_filename, field_names, metrics):
 
 # time_metrics is unused, only need it so can pass as function
 def run_container_max_rss_experiment(cmd, time_metrics):
-    start_cadvisor_if_not_running()
+    start_cadvisor_and_prometheus_if_not_running()
     cmd = TIME_CMD_PREFIX.split() + cmd.split()
     time_output = run_shell_cmd_and_get_stderr(cmd)
     time_metrics = [MAX_RSS_TIME_IDENTIFIER_AND_SHORTHAND]
@@ -323,7 +329,7 @@ def run_container_max_rss_experiment(cmd, time_metrics):
     return [("", trial_metrics)] 
 
 def run_time_experiment(cmd, time_metrics):
-    stop_cadvisor_if_running()
+    stop_cadvisor_and_prometheus_if_running()
     cmd = TIME_CMD_PREFIX.split() + cmd.split()
     time_output = run_shell_cmd_and_get_stderr(cmd)
 
@@ -357,7 +363,7 @@ def parse_time_output(output, time_metrics):
 
     return metrics
 
-def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
+def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
     mechanisms=["docker", "wasm_interpreted", "wasm_aot", "native"]):
     # Randomly intersperse experiments of each type
     experiments = []
@@ -392,7 +398,7 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, wasm
             docker_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = run_container_perf_and_memory_experiment(perf_events, container_exec_cmd)
+                    trial_metrics = run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, container_start_cmd)
                     remove_container(CONTAINER_NAME)
                     trial_metrics_row = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, 
                         perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES)
@@ -467,30 +473,45 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, wasm
 
 #TODO: do start, stop prometheus too
 
-def start_cadvisor():
-    run_shell_cmd_in_background(CADVISOR_START_CMD.split())
+def start_cadvisor_and_prometheus():
+    start_cadvisor()
+    start_prometheus()
     time.sleep(3)
 
-def start_cadvisor_if_not_running():
-    global cadvisor_running
-    if not cadvisor_running:
-        start_cadvisor()
-        cadvisor_running = True
+def start_prometheus():
+    run_shell_cmd(PROMETHEUS_START_CMD.split())
+
+def start_cadvisor():
+    run_shell_cmd_in_background(CADVISOR_START_CMD.split())
+
+def start_cadvisor_and_prometheus_if_not_running():
+    global cadvisor_and_prometheus_running
+    if not cadvisor_and_prometheus_running:
+        start_cadvisor_and_prometheus()
+        cadvisor_and_prometheus_running = True
 
 # Need to stop it whenever we are about to run an experiment using perf stat,
 # since otherwise perf stat cannot access the performance counters cAdvisor
 # is using
+
+def stop_cadvisor_and_prometheus():
+    stop_cadvisor()
+    stop_prometheus()   
+
+def stop_prometheus():
+    run_shell_cmd(PROMETHEUS_STOP_CMD.split())
+
 def stop_cadvisor():
     run_shell_cmd(CADVISOR_STOP_CMD.split())
 
-def stop_cadvisor_if_running():
-    global cadvisor_running
-    if cadvisor_running:
-        stop_cadvisor()
-        cadvisor_running = False
+def stop_cadvisor_and_prometheus_if_running():
+    global cadvisor_and_prometheus_running
+    if cadvisor_and_prometheus_running:
+        stop_cadvisor_and_prometheus()
+        cadvisor_and_prometheus_running = False
 
 def run_non_container_perf_and_memory_experiment(perf_events, cmd): 
-    start_cadvisor_if_not_running()
+    start_cadvisor_and_prometheus_if_not_running()
 
     # Create the cgroup that the  process will be assigned to
     run_shell_cmd(CREATE_CGROUP_CMD.split())
@@ -518,14 +539,14 @@ def run_non_container_perf_and_memory_experiment(perf_events, cmd):
 
     return [("", metrics)]
 
-def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd):
-    start_cadvisor_if_not_running()
+def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, container_start_cmd):
+    start_cadvisor_and_prometheus_if_not_running()
 
     start_container_time = datetime.utcnow()
     start_container_timestamp = start_container_time.timestamp()
 
     # TODO: parameterize the commands
-    container_cmd = CONTAINER_START_CMD.split() + container_exec_cmd.split()
+    container_cmd = container_start_cmd.split() + container_exec_cmd.split()
     run_shell_cmd(container_cmd)
 
     end_container_time = datetime.utcnow()
@@ -636,7 +657,6 @@ def delete_prometheus_series(match):
     if response.status_code != 204:
         raise Exception("Error: Prometheus series deletion failed")
 
-# TODO: Properly utilize container_name and add perf query as argument
 def get_parsed_prometheus_query_results(query, label=None):
     data = query_prometheus(query)
     return parse_prometheus_output(data, label)
@@ -664,28 +684,40 @@ def parse_prometheus_output(output, label=None):
 def main():
     # Parse the command line arguments to determine which model and input to use
     parser = argparse.ArgumentParser(description="Benchmark the performance of different edge ML deployment mechanisms")
-    parser.add_argument('--model', type=str, required=True, help='The ML model to use')
-    parser.add_argument('--input', type=str, required=True, help='The input file to run ML inference on')
-    parser.add_argument('--trials', type=int, required=True, help='The number of trials to run for each experiment type')
-    parser.add_argument('--mechanisms', type=str, default="docker,wasm_interpreted,wasm_aot,native",
+    parser.add_argument("--model", type=str, required=True, help="The ML model to use")
+    parser.add_argument("--input", type=str, required=True, help="The input file to run ML inference on")
+    parser.add_argument("--trials", type=int, required=True, help="The number of trials to run for each experiment type")
+    parser.add_argument("--mechanisms", type=str, default="docker,wasm_interpreted,wasm_aot,native",
                         help="Comma-separated list of mechanisms to include (choose from docker, wasm_interpreted, wasm_aot, native)")
+    parser.add_argument("--arch", type=str, required=True, help="The architecture to ")
 
     args = parser.parse_args()
     model = args.model
     input_file = args.input
     trials = args.trials
     mechanisms = set(m.strip().lower() for m in args.mechanisms.split(","))
+    arch = args.arch
 
     # Path to the model and input
     model_path = f"models/{model}"
     input_path = f"inputs/{input_file}"
 
+    img_name = IMG_NAME_TEMPLATE.format(arch=arch)
+
     # The command to execute the workload inside the container
+    container_start_cmd = CONTAINER_START_CMD_TEMPLATE.format(img_name=img_name)
     container_exec_cmd = f"./{NATIVE_BINARY_NAME} {model_path} {input_path}"
+    
+    # For Macs, the AoT Wasm file must have the .so extension
+    if is_mac():
+        aot_wasm_file_path = AOT_WASM_FILE_PATH_TEMPLATE.format(extension="so")
+    else:
+        aot_wasm_file_path = AOT_WASM_FILE_PATH_TEMPLATE.format(extension="wasm")
+
 
     # The commands to execute for the WebAssembly deployment mechanisms
     wasm_interpreted_cmd =f"{WASM_BINARY_PATH} --dir .:. {INTERPRETED_WASM_FILE_PATH} {model_path} {input_path}"
-    wasm_aot_cmd = f"{WASM_BINARY_PATH} --dir .:. {AOT_WASM_FILE_PATH} {model_path} {input_path}"
+    wasm_aot_cmd = f"{WASM_BINARY_PATH} --dir .:. {aot_wasm_file_path} {model_path} {input_path}"
 
     # The command to execute for the native deployment mechanism
     native_cmd = f"{NATIVE_BINARY_PATH} {model_path} {input_path}"
@@ -697,8 +729,9 @@ def main():
     try:
         # TODO: clean up custom cgroup in case previous execution did not terminate properly
 
-        collect_perf_data(trials, PERF_EVENTS, results_filename_prefix + PERF_RESULTS_FILENAME, container_exec_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
-        collect_only_time_data(trials, [TIME_METRICS[0]], results_filename_prefix + TIME_RESULTS_FILENAME, container_exec_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        # TODO: sort out args after adding new ones
+        collect_perf_data(trials, PERF_EVENTS, results_filename_prefix + PERF_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        collect_only_time_data(trials, [TIME_METRICS[0]], results_filename_prefix + TIME_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
         #collect_only_max_rss_data(trials, [TIME_METRICS[1]], MAX_RSS_RESULTS_FILENAME + program_start_time, container_exec_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd)
     finally:
         stop_cadvisor()
