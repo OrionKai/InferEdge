@@ -117,7 +117,80 @@ function generate_model_files() {
         python3 "$script"
     done
 
+    generate_mobilenet_model
+    generate_efficientnet_models
+    generate_resnet_models
     # TODO: ask the user what variants they actually want to keep for resnet and efficientnet
+}
+
+function generate_efficientnet_models() {
+    echo "Which EfficientNet models would you like to generate?"
+        echo "1. EfficientNetB0"
+        echo "2. EfficientNetB1"
+        echo "3. EfficientNetB2"
+        echo "4. EfficientNetB3"
+        echo "5. EfficientNetB4"
+        echo "6. EfficientNetB5"
+        echo "7. EfficientNetB6"
+        echo "8. EfficientNetB7"
+    local efficientnet_input
+    read -p "Enter the numbers identifying the EfficientNet models you would like to generate (comma-separated): " efficientnet_input
+    
+    IFS = "," read -r -a efficientnet_models_idx <<< "$efficientnet_input"
+    local efficientnet_models=()
+
+    for efficientnet_model_idx in "${efficientnet_models_idx[@]}"; do
+        case $efficientnet_model_idx in
+            1) efficientnet_models+=("--b0") ;;
+            2) efficientnet_models+=("--b1") ;;
+            3) efficientnet_models+=("--b2") ;;
+            4) efficientnet_models+=("--b3") ;;
+            5) efficientnet_models+=("--b4") ;;
+            6) efficientnet_models+=("--b5") ;;
+            7) efficientnet_models+=("--b6") ;;
+            8) efficientnet_models+=("--b7") ;;
+        esac
+    done
+
+    python3 models/gen_efficientnet_models.py "${efficientnet_models[@]}"
+}
+
+function generate_resnet_models() {
+    echo "Which ResNet models would you like to generate?"
+        echo "1. ResNet18"
+        echo "2. ResNet34"
+        echo "3. ResNet50"
+        echo "4. ResNet101"
+        echo "5. ResNet152"
+    local resnet_input
+    read -p "Enter the numbers identifying the ResNet models you would like to generate (comma-separated): " resnet_input
+
+    IFS = "," read -r -a resnet_models_idx <<< "$resnet_input"
+    local resnet_models=()
+
+    for resnet_model_idx in "${resnet_models_idx[@]}"; do
+        case $resnet_model_idx in
+            1) resnet_models+=("--resnet18") ;;
+            2) resnet_models+=("--resnet34") ;;
+            3) resnet_models+=("--resnet50") ;;
+            4) resnet_models+=("--resnet101") ;;
+            5) resnet_models+=("--resnet152") ;;
+        esac
+    done
+
+    python3 models/gen_resnet_models.py "${resnet_models[@]}"
+}
+
+function generate_mobilenet_model() {
+    echo "Would you like to generate the MobileNet model?"
+        echo "1. Yes"
+        echo "2. No"
+    local mobilenet_input
+    read -p "Enter the number identifying your choice: " mobilenet_input
+
+    if [ "$mobilenet_input" = "1" ]; then
+        python3 models/gen_mobilenet_model.py
+    fi
 }
 
 function acquire_files_arm64() {
