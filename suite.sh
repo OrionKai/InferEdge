@@ -104,11 +104,20 @@ function prompt_user_for_specific_actions() {
 
 function acquire_files() {
     prompt_user_for_architecture_if_not_set
+    generate_model_files
 
     case $arch in
         "arm64") acquire_files_arm64 ;;
         "amd64") acquire_files_amd64 ;;
     esac
+}
+
+function generate_model_files() {
+    for script in models/gen_*.py; do
+        python3 "$script"
+    done
+
+    # TODO: ask the user what variants they actually want to keep for resnet and efficientnet
 }
 
 function acquire_files_arm64() {
