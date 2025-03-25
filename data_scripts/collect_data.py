@@ -113,20 +113,18 @@ NUM_CORES = os.cpu_count()
 # its metrics
 CUSTOM_CGROUP_NAME = "custom"
 
+# How long we measure the Docker daemon's metrics for, as a baseline, before the 
+# container experiment is started
+DAEMON_MEASUREMENT_TIME = 10
+
 ## Prometheus queries
 PROMETHEUS_MAX_RSS_QUERY = f"(container_memory_max_usage_bytes{{name='{CONTAINER_NAME}'}})"
 PROMETHEUS_CONTAINER_MEMORY_USAGE_BYTES_FIELD_NAME = "container_memory_usage_bytes"
 PROMETHEUS_QUERIES_LABELS = [None] + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES
-# For the Docker experiments, we need to specify the container name
-PROMETHEUS_PERF_AND_MEMORY_QUERIES_WITH_NAME = [
-    "sum by (event) (container_perf_events_total{{name='{name_or_id}'}})",
-    "avg_over_time(container_memory_usage_bytes{{name='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})",
-    "max_over_time(container_memory_usage_bytes{{name='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})",
-    "100 * rate(container_cpu_usage_seconds_total{{name='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})" + f" / {NUM_CORES}",
-    "100 * rate(container_cpu_user_seconds_total{{name='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})" + f" / {NUM_CORES}",
-    "100 * rate(container_cpu_system_seconds_total{{name='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})" + f" / {NUM_CORES}"
-]
-# For the Wasm experiments, we need to specify the cgroup ID instead of the name
+
+# The daemon's ID as expected by Prometheus
+DAEMON_ID = "/system.slice/docker.service"
+
 PROMETHEUS_PERF_AND_MEMORY_QUERIES = [
     "sum by (event) (container_perf_events_total{{id='{name_or_id}'}})",
     "avg_over_time(container_memory_usage_bytes{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})",
@@ -135,6 +133,28 @@ PROMETHEUS_PERF_AND_MEMORY_QUERIES = [
     "100 * rate(container_cpu_user_seconds_total{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})" + f" / {NUM_CORES}",
     "100 * rate(container_cpu_system_seconds_total{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})" + f" / {NUM_CORES}"
 ]
+
+# When trying to measure a baseline for the Docker daemon's overhead, we need to get a time-independent measure for perf events, so 
+# use rate, since we cannot guarantee that the measurement time for the baseline will be the same as the container
+# execution time
+PROMETHEUS_PERF_QUERIES_RATE = """sum by (event) (rate(container_perf_events_total{{name='{name_or_id}'}}[{container_duration_ms}ms] 
+    @ {end_container_timestamp:.2f}))"""
+
+# Similarly when measuring the total increase in the Docker daemon's overhead, we use increase since the daemon will have been running
+# from before the experiment started, so it would contain values that do not directly correspond to the experiment's
+PROMETHEUS_PERF_QUERIES_INCREASE = """sum by (event) (increase(container_perf_events_total{{name='{name_or_id}'}}[{container_duration_ms}ms]
+    @ {end_container_timestamp:.2f}))"""
+
+# Queries for the Docker daemon's overhead when measuring its baseline state
+PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_BASELINE = [PROMETHEUS_PERF_QUERIES_RATE.replace("{name_or_id}", DAEMON_ID)]
+for query in PROMETHEUS_PERF_AND_MEMORY_QUERIES[1:]:
+    PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_BASELINE.append(query.replace("{name_or_id}", DAEMON_ID))
+
+# Queries for the Docker daemon's overhead when measuring it during the container experiment
+PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_DURING_CONTAINER = [PROMETHEUS_PERF_QUERIES_INCREASE.replace("{name_or_id}", DAEMON_ID)]
+for query in PROMETHEUS_PERF_AND_MEMORY_QUERIES[1:]:
+    PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_DURING_CONTAINER.append(query.replace("{name_or_id}", DAEMON_ID))
+
 # Gets the combined metrics for the container and the Docker daemon
 PROMETHEUS_DOCKER_COMBINED_PERF_AND_MEMORY_QUERIES = ["""sum by (event) (increase(container_perf_events_total{{id='/system.slice/docker.service'}}[{container_duration_ms}ms] 
     @ {end_container_timestamp:.2f})) 
@@ -539,13 +559,26 @@ def run_non_container_perf_and_memory_experiment(perf_events, cmd):
 
     return [("", metrics)]
 
+# TODO: remove perf_events
 def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, container_start_cmd):
     start_cadvisor_and_prometheus_if_not_running()
 
+    # Get the daemon's baseline metrics
+    daemon_metrics_baseline = {}
+    time.sleep(DAEMON_MEASUREMENT_TIME)
+
+    curr_time = datetime.utcnow()
+    curr_timestamp = curr_time.timestamp()
+
+    for query, label in zip(PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_BASELINE, PROMETHEUS_QUERIES_LABELS):
+        formatted_query = query.format(container_duration_ms=DAEMON_MEASUREMENT_TIME * 1000, 
+            end_container_timestamp=curr_timestamp)
+        daemon_metrics_baseline.update(get_parsed_prometheus_query_results(formatted_query, label))
+
+    # Run the container and time the execution
     start_container_time = datetime.utcnow()
     start_container_timestamp = start_container_time.timestamp()
 
-    # TODO: parameterize the commands
     container_cmd = container_start_cmd.split() + container_exec_cmd.split()
     run_shell_cmd(container_cmd)
 
@@ -554,23 +587,43 @@ def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, co
 
     container_duration_ms = round((end_container_timestamp - start_container_timestamp) * 1000)
     
-    # TODO: replace with container_name argument
+    # Get the container's metrics during the execution time
     container_cgroup_id = get_cgroup_id_for_container(CONTAINER_NAME)
     container_metrics = {}
 
-    for query, label in zip(PROMETHEUS_PERF_AND_MEMORY_QUERIES_WITH_NAME, PROMETHEUS_QUERIES_LABELS):
-        formatted_query = query.format(name_or_id=CONTAINER_NAME, container_duration_ms=container_duration_ms, 
+    for query, label in zip(PROMETHEUS_PERF_AND_MEMORY_QUERIES, PROMETHEUS_QUERIES_LABELS):
+        formatted_query = query.format(name_or_id=container_cgroup_id, container_duration_ms=container_duration_ms, 
             end_container_timestamp=end_container_timestamp)
         container_metrics.update(get_parsed_prometheus_query_results(formatted_query, label))
 
-    container_and_daemon_metrics = {}
+    # Get the daemon's metrics during that same time
+    daemon_metrics_during_container = {}
 
-    for query, label in zip(PROMETHEUS_DOCKER_COMBINED_PERF_AND_MEMORY_QUERIES, PROMETHEUS_QUERIES_LABELS):
-        formatted_query = query.format(name_or_id=container_cgroup_id, container_duration_ms=container_duration_ms, 
+    for query, label in zip(PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_DURING_CONTAINER, PROMETHEUS_QUERIES_LABELS):
+        formatted_query = query.format(container_duration_ms=container_duration_ms, 
             end_container_timestamp=end_container_timestamp)
-        container_and_daemon_metrics.update(get_parsed_prometheus_query_results(formatted_query, label))
+        daemon_metrics_during_container.update(get_parsed_prometheus_query_results(formatted_query, label))
 
-    return [("_container", container_metrics), ("_container_and_daemon", container_and_daemon_metrics)]
+    # Sum the metrics for the container and the daemon during the container's execution
+    container_and_daemon_metrics = {key: container_metrics[key] + daemon_metrics_during_container[key] 
+        for key in container_metrics}
+
+    # Multiply the perf events part of the daemon's baseline metrics by the container's execution time in
+    # seconds, since the former was obtained using rate
+    for perf_event in PERF_EVENTS:
+        daemon_metrics_baseline[perf_event] = round(daemon_metrics_baseline[perf_event] * (container_duration_ms / 1000))
+
+    # Subtract the daemon's baseline metrics from the daemon's metrics during the container's execution
+    # TODO: if zero, keep 0
+    daemon_extra_overhead_metrics = {key: max(0, daemon_metrics_during_container[key] - daemon_metrics_baseline[key])
+        for key in daemon_metrics_during_container}
+
+    # Sum the metrics for the container and only the extra overhead for the daemon during the container's execution
+    container_and_daemon_extra_overhead_metrics = {key: container_metrics[key] + daemon_extra_overhead_metrics[key]
+        for key in container_metrics}
+
+    return [("_container", container_metrics), ("_container_and_daemon", container_and_daemon_metrics),
+        ("_container_and_daemon_extra_overhead", container_and_daemon_extra_overhead_metrics)]
 
 def elementwise_sum(arr_x, arr_y):
     if len(arr_x) != len(arr_y):
