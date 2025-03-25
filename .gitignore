@@ -1,5 +1,5 @@
 inputs/*
-models/*
+models/*.pt
 libtorch/*
 rust/native
 prometheus/prometheus

@@ -7,24 +7,26 @@ export PROMETHEUS_VERSION="3.2.1"
 export SUITE_NAME="CS4099Suite"
 
 function main() {
-    if [ "$#" -ne 3 ]; then
-        echo "Usage: $0 <target address> <target username> <target password>"
-        exit 1
-    fi
-
-    target_address=$1
-    target_username=$2
-    target_password=$3
-
-    prompt_user_for_architecture
-
-    # If target architecture is aarch64, set up QEMU
-    if [ "$arch" = "arm64" ]; then
-        echo "Setting up QEMU for aarch64..."
-        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-    fi
-
     prompt_user_for_action
+}
+
+function prompt_user_for_target_details_if_not_set() {
+    if [ -z "$target_address" ] || [ -z "$target_username" ] || [ -z "$target_password" ]; then
+        prompt_user_for_target_details
+    fi
+}
+
+function prompt_user_for_target_details() {
+    read -p "Enter the target machine's address: " target_address
+    read -p "Enter the target machine's username: " target_username
+    read -s -p "Enter the target machine's password: " target_password
+    prompt_user_for_architecture_if_not_set
+}
+
+function prompt_user_for_architecture_if_not_set() {
+    if [ -z "$arch" ]; then
+        prompt_user_for_architecture
+    fi
 }
 
 function prompt_user_for_architecture() {
@@ -40,6 +42,12 @@ function prompt_user_for_architecture() {
             *) echo "Invalid option." ;;
         esac
     done
+
+    # If target architecture is aarch64, set up QEMU
+    if [ "$arch" = "arm64" ]; then
+        echo "Setting up QEMU for aarch64..."
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+    fi
 }
 
 function prompt_user_for_action() {
@@ -47,14 +55,26 @@ function prompt_user_for_action() {
         echo "What would you like to do?"
             echo "1. Run the entire suite"
             echo "2. Perform specific actions"
+            echo "3. Set/change target machine details"
         local action
         read -p "Enter the number identifying the action you would like to perform: " action
         case $action in
             1) run_suite ;;
             2) prompt_user_for_specific_actions ;;
+            3) prompt_user_for_target_details ;;
             *) echo "Invalid option." ;;
         esac
     done
+}
+
+function run_suite() {
+    prompt_user_for_target_details_if_not_set
+    acquire_files
+    transfer_files
+    setup_target_machine
+    run_data_collection
+    retrieve_data_collection_results
+    run_data_analysis
 }
 
 function prompt_user_for_specific_actions() {
@@ -66,6 +86,7 @@ function prompt_user_for_specific_actions() {
             echo "4. Run data collection on target machine"
             echo "5. Retrieve data collection results from target machine"
             echo "6. Run data analysis on host machine"
+            echo "7. Back to main menu"
         local action
         read -p "Enter the number identifying the action you would like to perform: " action
         case $action in
@@ -75,12 +96,15 @@ function prompt_user_for_specific_actions() {
             4) run_data_collection ;;
             5) retrieve_data_collection_results ;;
             6) run_data_analysis ;;
+            7) prompt_user_for_action ;;
             *) echo "Invalid option." ;;
         esac
     done
 }
 
 function acquire_files() {
+    prompt_user_for_architecture_if_not_set
+
     case $arch in
         "arm64") acquire_files_arm64 ;;
         "amd64") acquire_files_amd64 ;;
@@ -219,6 +243,8 @@ function compile_wasm() {
 }   
 
 function transfer_files() {
+    prompt_user_for_target_details_if_not_set
+
     # Transfer the suite files to the target machine, including 
     # models, inputs, native & wasm binaries, libtorch, Docker tar file, the
     # data collection Python file, and the Cadvisor and Prometheus binaries
@@ -231,40 +257,68 @@ function transfer_files() {
 
 function transfer_suite_files() {
     # Create a directory to store the suite files in the target machine
-    ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/$SUITE_NAME"
+    sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/$SUITE_NAME"
 
     # Transfer the suite files to the target machine
-    scp -r models inputs native wasm libtorch cadvisor prometheus python docker data_scripts/collect_data.py \
+    sshpass -p "$target_password" scp -r models inputs native wasm libtorch cadvisor prometheus python docker data_scripts/collect_data.py \
         "$target_username"@"$target_address":/home/"$target_username"/"$SUITE_NAME"
 
     # Create a directory in the suite directory to store results 
-    ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/$SUITE_NAME/results"
+    sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/$SUITE_NAME/results"
 }   
 
 function transfer_wasmedge_files() {
     # Create a directory to store the WasmEdge files in the target machine
-    ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/.wasmedge"
+    sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/.wasmedge"
 
     # Transfer the WasmEdge files to the target machine
-    scp -r wasmedge "$target_username"@"$target_address":/home/"$target_username"/.wasmedge
+    sshpass -p "$target_password" scp -r wasmedge "$target_username"@"$target_address":/home/"$target_username"/.wasmedge
 }
 
 function setup_target_machine() {
-    ssh "$target_username@$target_address" 'bash -s' < target_scripts/setup.sh
+    prompt_user_for_target_details_if_not_set
+
+    # Ask the user if they want to run the script directly, in case the target
+    # machine has an Internet connection, or if they want to simply transfer it in
+    # case the target machine cannot access the Internet while connected to the host
+    echo "How would you like to setup the target machine?"
+        echo "1. Run the setup script directly on the target machine"
+        echo "2. Transfer the setup script to the target machine, so you can run it there manually"
+    local setup_option
+    read -p "Enter the number identifying the setup option: " setup_option
+    case $setup_option in
+        1) run_setup_script ;;
+        2) transfer_setup_script ;;
+        *) echo "Invalid option." ;;
+    esac
+
+    sshpass -p "$target_password" ssh "$target_username@$target_address" 'bash -s' < target_scripts/setup.sh
+}
+
+function run_setup_script() {
+    sshpass -p "$target_password" ssh "$target_username@$target_address" 'bash -s' < target_scripts/setup.sh
+}
+
+function transfer_setup_script() {
+    sshpass -p "$target_password" scp target_scripts/setup.sh "$target_username@$target_address":/home/"$target_username"/"$SUITE_NAME"
 }
 
 function run_data_collection() {
+    prompt_user_for_target_details_if_not_set
+
     local set_name
     read -p "Enter a name to identify this set of experiments: " set_name
 
-    ssh "$target_username@$target_address" 'bash -s' < target_scripts/collect_data.sh
+    sshpass -p "$target_password" ssh "$target_username@$target_address" 'bash -s' < target_scripts/collect_data.sh
 }
 
 function retrieve_data_collection_results() {
+    prompt_user_for_target_details_if_not_set
+
     local set_name
     read -p "Enter the name of the set of experiments to retrieve results from: " set_name
 
-    scp -r "$target_username@$target_address:/home/$target_username/$SUITE_NAME/results/$set_name" results
+    sshpass -p "$target_password" scp -r "$target_username@$target_address:/home/$target_username/$SUITE_NAME/results/$set_name" results
 }
 
 function run_data_analysis() {
