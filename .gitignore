@@ -1,4 +1,3 @@
-inputs/*
 models/*.pt
 libtorch/*
 rust/native
