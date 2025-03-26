@@ -4,6 +4,7 @@ from torchvision.models import (
     resnet18, resnet34, resnet50, resnet101, resnet152,
     ResNet18_Weights, ResNet34_Weights, ResNet50_Weights, ResNet101_Weights, ResNet152_Weights
 )
+import argparse
 
 def main():
     # Parse input arguments representing which variants to generate

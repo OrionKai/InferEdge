@@ -37,11 +37,13 @@ function prompt_user_for_architecture() {
         local arch_input
         read -p "Enter the number identifying the architecture: " arch_input
         case $arch_input in
-            1) arch="amd64" ;;
-            2) arch="arm64" ;;
+            1) arch="amd64"; break ;;
+            2) arch="arm64"; break ;;
             *) echo "Invalid option." ;;
         esac
     done
+
+    echo "Architecture set to $arch."
 
     # If target architecture is aarch64, set up QEMU
     if [ "$arch" = "arm64" ]; then
@@ -107,9 +109,14 @@ function acquire_files() {
     generate_model_files
 
     case $arch in
-        "arm64") acquire_files_arm64 ;;
-        "amd64") acquire_files_amd64 ;;
+        "arm64") acquire_files_arm64_specific ;;
+        "amd64") acquire_files_amd64_specific ;;
     esac
+
+    build_cadvisor # ok
+    download_prometheus #ok
+    build_docker_and_native # ok 
+    compile_wasm # shd ok
 }
 
 function generate_model_files() {
@@ -136,7 +143,7 @@ function generate_efficientnet_models() {
     local efficientnet_input
     read -p "Enter the numbers identifying the EfficientNet models you would like to generate (comma-separated): " efficientnet_input
     
-    IFS = "," read -r -a efficientnet_models_idx <<< "$efficientnet_input"
+    IFS="," read -r -a efficientnet_models_idx <<< "$efficientnet_input"
     local efficientnet_models=()
 
     for efficientnet_model_idx in "${efficientnet_models_idx[@]}"; do
@@ -152,7 +159,9 @@ function generate_efficientnet_models() {
         esac
     done
 
-    python3 models/gen_efficientnet_models.py "${efficientnet_models[@]}"
+    cd models
+    python3 gen_efficientnet_models.py "${efficientnet_models[@]}"
+    cd -
 }
 
 function generate_resnet_models() {
@@ -165,7 +174,7 @@ function generate_resnet_models() {
     local resnet_input
     read -p "Enter the numbers identifying the ResNet models you would like to generate (comma-separated): " resnet_input
 
-    IFS = "," read -r -a resnet_models_idx <<< "$resnet_input"
+    IFS="," read -r -a resnet_models_idx <<< "$resnet_input"
     local resnet_models=()
 
     for resnet_model_idx in "${resnet_models_idx[@]}"; do
@@ -178,7 +187,9 @@ function generate_resnet_models() {
         esac
     done
 
-    python3 models/gen_resnet_models.py "${resnet_models[@]}"
+    cd models
+    python3 gen_resnet_models.py "${resnet_models[@]}"
+    cd -
 }
 
 function generate_mobilenet_model() {
@@ -189,26 +200,21 @@ function generate_mobilenet_model() {
     read -p "Enter the number identifying your choice: " mobilenet_input
 
     if [ "$mobilenet_input" = "1" ]; then
-        python3 models/gen_mobilenet_model.py
+        cd models
+        python3 gen_mobilenet_model.py
+        cd -
     fi
 }
 
-function acquire_files_arm64() {
-    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps" 
-    download_libtorch_arm64
-    build_cadvisor 
-    download_prometheus
-    build_docker_and_native 
-    compile_wasm
+function acquire_files_arm64_specific() {
+    # Just do build wasmedge and build cadvisor
+    download_libtorch_arm64 # ok
+    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps" # not ok
 }
 
-function acquire_files_amd64() {
-    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_x86_64-plugins-deps"
+function acquire_files_amd64_specific() {
     download_libtorch_amd64
-    build_cadvisor 
-    download_prometheus 
-    build_docker_and_native 
-    compile_wasm
+    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_x86_64-plugins-deps"
 }
 
 function build_wasmedge() {
@@ -231,8 +237,9 @@ function build_wasmedge() {
         "$image")
 
     # Copy and execute the inside_docker.sh script inside the container 
-    docker cp build_scripts/wasmedge/inside_docker_"$arch" "$container_id":/root/inside_docker.sh
-    docker exec -it "$container_id" /bin/bash /root/inside_docker.sh
+    # TODO: script not being run inside container
+    docker cp build_scripts/wasmedge/inside_docker_"$arch".sh "$container_id":/root/inside_docker.sh
+    docker exec "$container_id" /bin/bash /root/inside_docker.sh
 
     local build_dir="wasmedge"
 
@@ -245,6 +252,8 @@ function build_wasmedge() {
     # Clean up the container
     docker stop "$container_id"
     docker rm "$container_id"
+
+    rm -rf WasmEdge
 }
 
 function download_libtorch_arm64() {
@@ -304,7 +313,7 @@ function build_docker_and_native() {
     local image_name="image-classification:$arch"
 
     # Build the Docker container 
-    docker buildx build --platform linux/"$arch" -t "$image_name" --output type=docker .
+    docker buildx build --platform linux/"$arch" -t "$image_name" -f Dockerfiles/image_classification/Dockerfile --output type=docker .
 
     # Save the Docker container into a tar file
     docker save -o docker/image-classification-${arch}.tar "$image_name"
@@ -320,8 +329,12 @@ function build_docker_and_native() {
 
 function compile_wasm() {
     cd rust/wasm
-    cargo build --target=wasm32-wasi --release
+    rustup target add wasm32-wasip1
+    cargo build --target=wasm32-wasip1 --release
     cd - 
+
+    # Move the compiled Wasm binary to the wasm directory
+    mv rust/wasm/target/wasm32-wasip1/release/interpreted.wasm wasm
 }   
 
 function transfer_files() {
@@ -330,6 +343,7 @@ function transfer_files() {
     # Transfer the suite files to the target machine, including 
     # models, inputs, native & wasm binaries, libtorch, Docker tar file, the
     # data collection Python file, and the Cadvisor and Prometheus binaries
+    # TODO: keep getting permission denied
     transfer_suite_files
 
     # Transfer the results of the WasmEdge build, which will be located
@@ -409,4 +423,4 @@ function run_data_analysis() {
     host_scripts/analyze_data.sh results/$set_name false
 }
 
-main()
+main

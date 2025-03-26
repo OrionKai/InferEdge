@@ -45,7 +45,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
          export CGO_LDFLAGS="-L/usr/lib/aarch64-linux-gnu -L/usr/lib"; \
     else \
          echo "Unsupported architecture: $TARGETARCH" && exit 1; \
-    fi \
+    fi && \
     GO_FLAGS="-tags=libpfm,netgo" make build
 
 # Copy the build artifacts to an output directory so it can be extracted more 

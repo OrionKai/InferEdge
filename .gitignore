@@ -3,3 +3,4 @@ libtorch/*
 rust/native
 prometheus/prometheus
 cadvisor/cadvisor
+rust/wasm/target
