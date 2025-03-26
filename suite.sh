@@ -106,20 +106,63 @@ function prompt_user_for_specific_actions() {
 
 function acquire_files() {
     prompt_user_for_architecture_if_not_set
-    generate_model_files
+    #install_rust
+    #install_python_and_dependencies
+    #generate_model_files
 
-    case $arch in
-        "arm64") acquire_files_arm64_specific ;;
-        "amd64") acquire_files_amd64_specific ;;
-    esac
+    # case $arch in
+    #     "arm64") acquire_files_arm64_specific ;;
+    #     "amd64") acquire_files_amd64_specific ;;
+    # esac
 
-    build_cadvisor # ok
-    download_prometheus #ok
-    build_docker_and_native # ok 
-    compile_wasm # shd ok
+    build_cadvisor # not ok on Mac
+    #download_prometheus 
+    #build_docker_and_native 
+    #compile_wasm 
+}
+
+function install_rust() {
+    if ! command -v rustc &> /dev/null; then
+        echo "Rust is not installed. Would you like to install Rust through the script?"
+            echo "1. Yes"
+            echo "2. No"
+        read -p "Enter the number identifying your choice: " choice
+        if [ "$choice" == "1" ]; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+            source $HOME/.cargo/env
+        else
+            echo "Please install Rust manually and re-run this script."
+            exit 1
+        fi
+    fi
+}
+
+function install_python_and_dependencies() {
+    if ! command -v python3 &> /dev/null; then
+        echo "Python3 is not installed. Would you like to install Python3 through the script?"
+            echo "1. Yes"
+            echo "2. No"
+        read -p "Enter the number identifying your choice: " choice
+        if [ "$choice" == "1" ]; then
+            if [ "$uname -m" != "Darwin" ]; then
+                sudo apt install python3 python3-pip python3-venv
+            else 
+                # For Macs
+                brew install python3
+            fi
+        else
+            echo "Please install Python3 manually and re-run this script."
+            exit 1
+        fi        
+    fi
+
+    python3 -m venv myenv
+    source myenv/bin/activate
+    pip install -r python/host/requirements.txt
 }
 
 function generate_model_files() {
+    echo "Generating model files..."
     for script in models/gen_*.py; do
         python3 "$script"
     done
@@ -127,7 +170,6 @@ function generate_model_files() {
     generate_mobilenet_model
     generate_efficientnet_models
     generate_resnet_models
-    # TODO: ask the user what variants they actually want to keep for resnet and efficientnet
 }
 
 function generate_efficientnet_models() {
@@ -218,6 +260,7 @@ function acquire_files_amd64_specific() {
 }
 
 function build_wasmedge() {
+    echo "Building WasmEdge..."
     local image="$1"          # e.g. wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps
 
     local platform="linux/$arch"
@@ -231,15 +274,16 @@ function build_wasmedge() {
     local platform="linux/$arch"
 
     docker pull --platform "$platform" "$image"
-    local container_id=$(sudo docker run -d --platform "$platform" \
-        -v ./WasmEdge:/root/wasmedge \
-        -v ./libtorch:/root/libtorch \
-        "$image")
+    local container_id=$(sudo docker run --platform "$platform" --rm \
+        -v "$(pwd)/WasmEdge":/root/wasmedge \
+        -v "$(pwd)/libtorch":/root/libtorch \
+        -v "$(pwd)/build_scripts/wasmedge/inside_docker_${arch}.sh":/root/inside_docker.sh \
+        "$image" /bin/bash /root/inside_docker.sh)
 
     # Copy and execute the inside_docker.sh script inside the container 
     # TODO: script not being run inside container
-    docker cp build_scripts/wasmedge/inside_docker_"$arch".sh "$container_id":/root/inside_docker.sh
-    docker exec "$container_id" /bin/bash /root/inside_docker.sh
+    # docker cp build_scripts/wasmedge/inside_docker_"$arch".sh "$container_id":/root/inside_docker.sh
+    # docker exec "$container_id" /bin/bash /root/inside_docker.sh
 
     local build_dir="wasmedge"
 
@@ -257,6 +301,7 @@ function build_wasmedge() {
 }
 
 function download_libtorch_arm64() {
+    echo "Downloading libtorch..."
     local build_dir="libtorch"
 
     # Download and extract libtorch
@@ -270,6 +315,8 @@ function download_libtorch_arm64() {
 }
 
 function download_libtorch_amd64() {
+    echo "Downloading libtorch..."
+
     # Download and extract libtorch
     export TORCH_LINK="https://download.pytorch.org/libtorch/cpu/${PYTORCH_ABI}-shared-with-deps-${PYTORCH_VERSION}%2Bcpu.zip" && \
     curl -s -L -o torch.zip $TORCH_LINK && \
@@ -278,6 +325,8 @@ function download_libtorch_amd64() {
 }
 
 function build_cadvisor() {
+    echo "Downloading cAdvisor..."
+
     local image_name="cadvisor-build:$arch"
     local build_dir="cadvisor"
     mkdir -p "$build_dir"
@@ -295,6 +344,7 @@ function build_cadvisor() {
 }
 
 function download_prometheus() {
+    echo "Downloading Prometheus..."
     local url="https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-${arch}.tar.gz"
     local output_file="prometheus.tar.gz"
     local extract_dir="prometheus-${PROMETHEUS_VERSION}.linux-${arch}"
@@ -310,6 +360,7 @@ function download_prometheus() {
 }
 
 function build_docker_and_native() {
+    echo "Building the Docker image and native binary..."
     local image_name="image-classification:$arch"
 
     # Build the Docker container 
@@ -328,16 +379,19 @@ function build_docker_and_native() {
 }
 
 function compile_wasm() {
+    echo "Compiling the WebAssembly binary..."
     cd rust/wasm
     rustup target add wasm32-wasip1
     cargo build --target=wasm32-wasip1 --release
     cd - 
 
     # Move the compiled Wasm binary to the wasm directory
+    mkdir -p wasm
     mv rust/wasm/target/wasm32-wasip1/release/interpreted.wasm wasm
 }   
 
 function transfer_files() {
+    echo "Transferring files to target device..."
     prompt_user_for_target_details_if_not_set
 
     # Transfer the suite files to the target machine, including 
@@ -402,6 +456,8 @@ function transfer_setup_script() {
 function run_data_collection() {
     prompt_user_for_target_details_if_not_set
 
+    echo "Running data collection on target device..."
+
     local set_name
     read -p "Enter a name to identify this set of experiments: " set_name
 
@@ -411,6 +467,8 @@ function run_data_collection() {
 function retrieve_data_collection_results() {
     prompt_user_for_target_details_if_not_set
 
+    echo "Retrieving results from target device..."
+
     local set_name
     read -p "Enter the name of the set of experiments to retrieve results from: " set_name
 
@@ -418,6 +476,8 @@ function retrieve_data_collection_results() {
 }
 
 function run_data_analysis() {
+    echo "Analyzing results of experiments..."
+
     local set_name
     read -p "Enter the name of the set of experiments to analyze: " set_name
     host_scripts/analyze_data.sh results/$set_name false
