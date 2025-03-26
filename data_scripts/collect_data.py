@@ -60,7 +60,7 @@ CONTAINER_INSPECT_ID_CMD="sudo docker inspect -f '{{{{.Id}}}}' {container_name}"
 
 # Commands to start and stop Prometheus, cAdvisor
 PROMETHEUS_START_CMD = f"sudo {PROMETHEUS_BINARY_PATH} --config.file={benchmark_dir}/prometheus/prometheus.yml --web.enable-admin-api" 
-PROMETHEUS_STOP_CMD = f"sudo pkfill -f {PROMETHEUS_BINARY_PATH}"
+PROMETHEUS_STOP_CMD = f"sudo pkill -f {PROMETHEUS_BINARY_PATH}"
 CADVISOR_START_CMD = f"sudo {CADVISOR_BINARY_PATH} -perf_events_config={CADVISOR_PERF_CONFIG_PATH}"
 CADVISOR_STOP_CMD = f"sudo pkill -f {CADVISOR_BINARY_PATH}"
 
@@ -227,6 +227,7 @@ def collect_time_data(n, time_metrics, results_filename, docker_run_experiment_f
     for experiment in experiments:
         print(f"Starting {experiment} experiment")
         start_time = datetime.utcnow()
+        trial_metrics = {}
 
         if experiment == "docker":
             trial = docker_trial
@@ -291,13 +292,13 @@ def collect_time_data(n, time_metrics, results_filename, docker_run_experiment_f
     write_metrics_to_csv(results_filename, field_names, metrics)
 
 # TODO: remove time_metrics as arg if only
-def collect_only_max_rss_data(n, time_metrics, results_filename, container_exec_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms):
+def collect_only_max_rss_data(n, time_metrics, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms):
     collect_time_data(n, time_metrics, results_filename, run_container_max_rss_experiment, 
-        run_time_experiment, container_exec_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        run_time_experiment, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
 
-def collect_only_time_data(n, time_metrics, results_filename, container_exec_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms):
+def collect_only_time_data(n, time_metrics, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms):
     collect_time_data(n, time_metrics, results_filename, run_time_experiment,
-        run_time_experiment, container_exec_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        run_time_experiment, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
 
 def prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics_sets, metrics_keys):
     # trial_metrics_sets is a list of tuples in format ("special_identifier", trial_metrics_set)
@@ -410,6 +411,7 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
     for experiment in experiments:
         print(f"Starting {experiment} experiment")
         start_time = datetime.utcnow()
+        trial_metrics = {}
         
         # TODO: use constants for experiment types
         if experiment == "docker":
@@ -726,11 +728,7 @@ def parse_prometheus_output(output, label=None):
         else:
             key = label if label is not None else "unknown_metric"
 
-        # If the metric contains multiple values, make sure we use all of them
-        if "values" in entry:
-            value = [round(float(value), 2) for _, value in entry["values"]]
-        else:
-            value = round(float(entry["value"][1]), 2)
+        value = round(float(entry["value"][1]), 2)
         metrics[key] = value
     return metrics
 
@@ -775,8 +773,7 @@ def main():
     # The command to execute for the native deployment mechanism
     native_cmd = f"{NATIVE_BINARY_PATH} {model_path} {input_path}"
 
-    program_start_time = datetime.utcnow().isoformat()
-
+    program_start_time = datetime.utcnow().isoformat().replace(":", "_")
     results_filename_prefix = program_start_time + f"{model}" + f"{input_file}"
 
     try:
