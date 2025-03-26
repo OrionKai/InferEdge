@@ -110,12 +110,12 @@ function acquire_files() {
     #install_python_and_dependencies
     #generate_model_files
 
-    # case $arch in
-    #     "arm64") acquire_files_arm64_specific ;;
-    #     "amd64") acquire_files_amd64_specific ;;
-    # esac
+    case $arch in
+        "arm64") acquire_files_arm64_specific ;;
+        "amd64") acquire_files_amd64_specific ;;
+    esac
 
-    build_cadvisor # not ok on Mac
+    #build_cadvisor
     #download_prometheus 
     #build_docker_and_native 
     #compile_wasm 
