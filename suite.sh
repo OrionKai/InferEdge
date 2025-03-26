@@ -106,19 +106,19 @@ function prompt_user_for_specific_actions() {
 
 function acquire_files() {
     prompt_user_for_architecture_if_not_set
-    #install_rust
-    #install_python_and_dependencies
-    #generate_model_files
+    install_rust
+    install_python_and_dependencies
+    generate_model_files
 
     case $arch in
         "arm64") acquire_files_arm64_specific ;;
         "amd64") acquire_files_amd64_specific ;;
     esac
 
-    #build_cadvisor
-    #download_prometheus 
-    #build_docker_and_native 
-    #compile_wasm 
+    build_cadvisor
+    download_prometheus 
+    build_docker_and_native 
+    compile_wasm 
 }
 
 function install_rust() {
