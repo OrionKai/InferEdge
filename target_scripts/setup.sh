@@ -2,11 +2,8 @@
 # This script is meant to be run on the target machine to perform one-time setup of the environment 
 # in preparation for the experiments.
 
-
-
 export USERNAME=${SUDO_USER:-$(whoami)}
 export SUITE_NAME="CS4099Suite"
-
 
 function main() {
     if [ "$(uname -m)" == "aarch64" ]; then
@@ -46,7 +43,11 @@ function install_utils() {
 
 function setup_wasmedge() {
     chmod u+x /home/$USERNAME/.wasmedge/bin/wasmedge
-    # TODO: add to path
+
+    # Add wasmedge to the PATH for the remainder of this script
+    # since it will be used in various parts
+    export PATH=${PATH}:/home/$USERNAME/.wasmedge/bin
+
 
     # Create symbolic links in case they were not uploaded 
     ln -s /home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0 /home/$USERNAME/.wasmedge/lib64/libwasmedge.so
