@@ -20,6 +20,7 @@ function prompt_user_for_target_details() {
     read -p "Enter the target machine's address: " target_address
     read -p "Enter the target machine's username: " target_username
     read -s -p "Enter the target machine's password: " target_password
+    echo
     prompt_user_for_architecture_if_not_set
 }
 
@@ -107,7 +108,7 @@ function prompt_user_for_specific_actions() {
 function acquire_files() {
     prompt_user_for_architecture_if_not_set
     install_rust
-    install_python_and_dependencies
+    install_python_and_dependencies # TODO: check if torchvision really required
     generate_model_files
 
     case $arch in
@@ -202,7 +203,7 @@ function generate_efficientnet_models() {
     done
 
     cd models
-    python3 gen_efficientnet_models.py "${efficientnet_models[@]}"
+    python3 ../host_scripts/gen_efficientnet_models.py "${efficientnet_models[@]}"
     cd -
 }
 
@@ -230,7 +231,7 @@ function generate_resnet_models() {
     done
 
     cd models
-    python3 gen_resnet_models.py "${resnet_models[@]}"
+    python3 ../host_scripts/gen_resnet_models.py "${resnet_models[@]}"
     cd -
 }
 
@@ -243,15 +244,14 @@ function generate_mobilenet_model() {
 
     if [ "$mobilenet_input" = "1" ]; then
         cd models
-        python3 gen_mobilenet_model.py
+        python3 ../host_scripts/gen_mobilenet_model.py
         cd -
     fi
 }
 
 function acquire_files_arm64_specific() {
-    # Just do build wasmedge and build cadvisor
-    download_libtorch_arm64 # ok
-    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps" # not ok
+    download_libtorch_arm64 
+    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps" 
 }
 
 function acquire_files_amd64_specific() {
@@ -271,33 +271,38 @@ function build_wasmedge() {
     git checkout 61db304fc4041dfae7cc736858a999a221260933
     cd -
 
+    # Give the script to run inside the container the necessary permissions
+    chmod +x build_scripts/wasmedge/inside_docker_"$arch".sh
+
     local platform="linux/$arch"
 
+    local build_dir="wasmedge"
+    mkdir -p "$build_dir"
+
+    # The build will randomly fail sometimes so we retry until it succeeds
     docker pull --platform "$platform" "$image"
-    local container_id=$(sudo docker run --platform "$platform" --rm \
+    until sudo docker run --platform "$platform" --rm \
+        --entrypoint /bin/bash \
+        -v "$(pwd)/$build_dir":/root/wasmedge-install \
         -v "$(pwd)/WasmEdge":/root/wasmedge \
         -v "$(pwd)/libtorch":/root/libtorch \
         -v "$(pwd)/build_scripts/wasmedge/inside_docker_${arch}.sh":/root/inside_docker.sh \
-        "$image" /bin/bash /root/inside_docker.sh)
+        "$image" -c "git config --global --add safe.directory /root/wasmedge && /root/inside_docker.sh"
+    do
+        echo "WasmEdge build failed. Retrying..."
+    done
 
-    # Copy and execute the inside_docker.sh script inside the container 
-    # TODO: script not being run inside container
-    # docker cp build_scripts/wasmedge/inside_docker_"$arch".sh "$container_id":/root/inside_docker.sh
-    # docker exec "$container_id" /bin/bash /root/inside_docker.sh
-
-    local build_dir="wasmedge"
-
-    # Copy the build results into the wasmedge directory
-    mkdir -p "$build_dir"
-    docker cp "$container_id":/root/wasmedge-install/. "$build_dir"
+    # The build by default stores the libwasmedgePluginWasiNN.so in the wrong directory
+    # for some reason, so we move it here
     mkdir -p "$build_dir"/plugin
-    mv "$build_dir"/lib64/wasmedge/libwasmedgePluginWasiNN.so "$build_dir"/plugin
 
-    # Clean up the container
-    docker stop "$container_id"
-    docker rm "$container_id"
+    # This file was technically created by another user when the Docker container was run
+    # so we need to use sudo to move it
+    sudo mv "$build_dir"/lib64/wasmedge/libwasmedgePluginWasiNN.so "$build_dir"/plugin
 
-    rm -rf WasmEdge
+    # Clean up; again, we need to use sudo because some of the files inside this directory
+    # were technically created by another user when the Docker container was run
+    sudo rm -rf WasmEdge
 }
 
 function download_libtorch_arm64() {
@@ -391,30 +396,30 @@ function compile_wasm() {
 }   
 
 function transfer_files() {
-    echo "Transferring files to target device..."
     prompt_user_for_target_details_if_not_set
 
     # Transfer the suite files to the target machine, including 
     # models, inputs, native & wasm binaries, libtorch, Docker tar file, the
     # data collection Python file, and the Cadvisor and Prometheus binaries
-    # TODO: keep getting permission denied
+    echo "Transferring suite files to target device..."
     transfer_suite_files
 
     # Transfer the results of the WasmEdge build, which will be located
     # in a separate location to the rest of the suite
+    echo "Transferring WasmEdge files to target device..."
     transfer_wasmedge_files
 }   
 
 function transfer_suite_files() {
     # Create a directory to store the suite files in the target machine
-    sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/$SUITE_NAME"
+    sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/Desktop/$SUITE_NAME"
 
     # Transfer the suite files to the target machine
     sshpass -p "$target_password" scp -r models inputs native wasm libtorch cadvisor prometheus python docker data_scripts/collect_data.py \
-        "$target_username"@"$target_address":/home/"$target_username"/"$SUITE_NAME"
+        "$target_username"@"$target_address":/home/"$target_username"/Desktop/"$SUITE_NAME"
 
     # Create a directory in the suite directory to store results 
-    sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/$SUITE_NAME/results"
+    sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/Desktop/$SUITE_NAME/results"
 }   
 
 function transfer_wasmedge_files() {
@@ -441,16 +446,16 @@ function setup_target_machine() {
         2) transfer_setup_script ;;
         *) echo "Invalid option." ;;
     esac
-
-    sshpass -p "$target_password" ssh "$target_username@$target_address" 'bash -s' < target_scripts/setup.sh
 }
 
 function run_setup_script() {
-    sshpass -p "$target_password" ssh "$target_username@$target_address" 'bash -s' < target_scripts/setup.sh
+    sshpass -p "$target_password" scp target_scripts/setup.sh "$target_username@$target_address":/home/"$target_username"/Desktop/"$SUITE_NAME"
+    sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/setup.sh"
 }
 
 function transfer_setup_script() {
-    sshpass -p "$target_password" scp target_scripts/setup.sh "$target_username@$target_address":/home/"$target_username"/"$SUITE_NAME"
+    sshpass -p "$target_password" scp target_scripts/setup.sh "$target_username@$target_address":/home/"$target_username"/Desktop/"$SUITE_NAME"
+    echo "Please run the script on the target as follows: /home/$target_username/Desktop/$SUITE_NAME/setup.sh $SUITE_NAME $arch"
 }
 
 function run_data_collection() {

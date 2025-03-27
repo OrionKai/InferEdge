@@ -1,20 +1,23 @@
+#!/bin/bash
 # This script is meant to be run on the target machine to perform one-time setup of the environment 
 # in preparation for the experiments.
 
-export USERNAME=$(whoami)
+
+
+export USERNAME=${SUDO_USER:-$(whoami)}
+export SUITE_NAME="CS4099Suite"
+
 
 function main() {
-    if [ "$#" -ne 2 ]; then
-        echo "Usage: $0 <suite name> <architecture>"
-        exit 1
+    if [ "$uname -m" == "aarch64" ]; then
+        arch="arm64"
+    else
+        arch="amd64"
     fi
 
-    suite_name=$1
-    arch=$2
+    suite_path="/home/$USERNAME/Desktop/$SUITE_NAME"
 
-    suite_path="/home/$USERNAME/$suite_name"
-
-    sudo apt-get update
+    apt-get update
 
     setup_wasmedge
 
@@ -37,6 +40,10 @@ function main() {
     fi
 }
 
+function install_utils() {
+    apt-get install -y grep
+}
+
 function setup_wasmedge() {
     chmod u+x /home/$USERNAME/.wasmedge/bin/wasmedge
 
@@ -54,9 +61,9 @@ function enable_memory_controller() {
 
     if !grep -q "$cgroup_enable_param" <<< "$current_cmdline_contents"
     then 
-        sudo cp "$cmdline_file" "$cmdline_file.bak"
+        cp "$cmdline_file" "$cmdline_file.bak"
         local new_cmdline_contents="${current_cmdline_contents} ${cgroup_enable_param}"
-        sudo sh -c "echo '$new_cmdline_contents' > $cmdline_file"
+        sh -c "echo '$new_cmdline_contents' > $cmdline_file"
     fi
 }
 
@@ -68,7 +75,7 @@ function setup_docker() {
         read -p "Enter the number identifying your choice: " choice
         if [ "$choice" == "1" ]; then
             chmod u+x "$suite_path"/docker/install-docker.sh
-            sudo "$suite_path"/docker/install-docker.sh
+            "$suite_path"/docker/install-docker.sh
         else
             echo "Please install Docker manually and re-run this script."
             exit 1
@@ -82,7 +89,7 @@ function load_docker_image() {
 
 function setup_cadvisor() {
     chmod u+x $suite_path/cadvisor/cadvisor
-    sudo apt install libpfm4 linux-perf
+    apt install libpfm4 linux-perf
 }
 
 function setup_prometheus() {
@@ -98,14 +105,14 @@ function setup_python() {
             echo "2. No"
         read -p "Enter the number identifying your choice: " choice
         if [ "$choice" == "1" ]; then
-            sudo apt install -y python3 python3-venv python3-pip
+            apt install -y python3 python3-venv python3-pip
         else
             echo "Please install Python3 manually and re-run this script."
             exit 1
         fi
     fi
 
-    sudo apt install -y cgroup-tools
+    apt install -y cgroup-tools
     python3 -m venv "$suite_path/myenv" 
     source "$suite_path/myenv/bin/activate" && pip install -r "$suite_path/python/target/requirements.txt"
 }

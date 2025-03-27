@@ -4,3 +4,8 @@ rust/native
 prometheus/prometheus
 cadvisor/cadvisor
 rust/wasm/target
+myenv/*
+wasmedge/*
+wasm/*
+docker/*.tar
+native/*
