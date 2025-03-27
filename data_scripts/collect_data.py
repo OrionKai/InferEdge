@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 from sys import platform
 
-# The absolute path of the "scripts" directory where this script is in
+# The absolute path of the "scripts" directory where this script is in TODO: fix
 scripts_dir = os.path.abspath(os.path.dirname(__file__))
 
 # The absolute path of the parent "Benchmark" directory
@@ -97,13 +97,13 @@ TIME_RESULTS_FILENAME = "time_results.csv"
 MAX_RSS_RESULTS_FILENAME = "max_rss_results.csv"
 
 # Basic field names to include in every CSV file storing experiment results
-CSV_BASIC_FIELD_NAMES = ["experiment_type", "trial_number", "start_time"] 
+CSV_BASIC_FIELD_NAMES = ["deployment-mechanism", "trial-number", "start-time"] 
 
 # Field names for memory metrics
-MEMORY_FIELD_NAMES = ["avg_memory_over_time_sampled", "max_memory_over_time_sampled", "max_memory_over_time"]
+MEMORY_FIELD_NAMES = ["avg-memory_over_time_sampled", "max-memory-over-time-sampled", "max-memory-over-time"]
 
 # Field names for CPU metrics
-CPU_FIELD_NAMES = ["cpu_total_utilization", "cpu_user_utilization", "cpu_system_utilization"]
+CPU_FIELD_NAMES = ["cpu-total-utilization", "cpu-user-utilization", "cpu-system-utilization"]
 
 # Number of CPU cores 
 NUM_CORES = os.cpu_count()
@@ -196,18 +196,18 @@ def is_mac():
 # used to tell the daemon to create the container, we need this experiment here to 
 # get accurate max RSS metrics for Docker
 def collect_time_data(n, time_metrics, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
-    mechanisms=["docker","wasm_interpreted","wasm_aot","native"]):
+    deployment_mechanisms=["docker","wasm_interpreted","wasm_aot","native"]):
     time_metrics_short_names = [time_metric[1] for time_metric in time_metrics]
 
     # Randomly intersperse experiments of each type
     experiments = []
-    if "docker" in mechanisms:
+    if "docker" in deployment_mechanisms:
         experiments += ["docker"] * n
-    if "wasm_interpreted" in mechanisms:
+    if "wasm_interpreted" in deployment_mechanisms:
         experiments += ["wasm_interpreted"] * n
-    if "wasm_aot" in mechanisms:
+    if "wasm_aot" in deployment_mechanisms:
         experiments += ["wasm_aot"] * n
-    if "native" in mechanisms:
+    if "native" in deployment_mechanisms:
         experiments += ["native"] * n
     random.shuffle(experiments)
 
@@ -301,7 +301,7 @@ def prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics_
         trial_metrics = trial_metrics_set[1]
     
         trial_metrics_row = {
-            "experiment_type": experiment + identifier,
+            "deployment_mechanism": experiment + identifier,
             "trial_number": trial,
             "start_time": start_time.isoformat(),
         }
@@ -356,16 +356,16 @@ def parse_time_output(output, time_metrics):
     return metrics
 
 def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
-    mechanisms=["docker", "wasm_interpreted", "wasm_aot", "native"]):
+    deployment_mechanisms=["docker", "wasm_interpreted", "wasm_aot", "native"]):
     # Randomly intersperse experiments of each type
     experiments = []
-    if "docker" in mechanisms:
+    if "docker" in deployment_mechanisms:
         experiments += ["docker"] * n
-    if "wasm_interpreted" in mechanisms:
+    if "wasm_interpreted" in deployment_mechanisms:
         experiments += ["wasm_interpreted"] * n
-    if "wasm_aot" in mechanisms:
+    if "wasm_aot" in deployment_mechanisms:
         experiments += ["wasm_aot"] * n
-    if "native" in mechanisms:
+    if "native" in deployment_mechanisms:
         experiments += ["native"] * n
     random.shuffle(experiments)
 
@@ -708,7 +708,7 @@ def main():
     model = args.model
     input_file = args.input
     trials = args.trials
-    mechanisms = set(m.strip().lower() for m in args.mechanisms.split(","))
+    deployment_mechanisms = set(m.strip().lower() for m in args.deployment_mechanisms.split(","))
     arch = args.arch
 
     # Path to the model and input
@@ -734,13 +734,13 @@ def main():
     # The command to execute for the native deployment mechanism
     native_cmd = f"{NATIVE_BINARY_PATH} {model_path} {input_path}"
 
-    program_start_time = datetime.utcnow().isoformat().replace(":", "_")
-    results_filename_prefix = program_start_time + f"{model}" + f"{input_file}"
+    results_filename_prefix = f"{model}_{input_file}"
+    results_filename_prefix = results_filename_prefix.replace(".", "_")
 
     try:
         # TODO: clean up custom cgroup in case previous execution did not terminate properly
-        collect_perf_data(trials, PERF_EVENTS, results_filename_prefix + PERF_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
-        collect_time_data(trials, [TIME_METRICS[0]], results_filename_prefix + TIME_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        collect_perf_data(trials, PERF_EVENTS, results_filename_prefix + PERF_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, deployment_mechanisms)
+        collect_time_data(trials, [TIME_METRICS[0]], results_filename_prefix + TIME_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, deployment_mechanisms)
     finally:
         stop_cadvisor()
 
