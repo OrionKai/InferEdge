@@ -46,6 +46,7 @@ function install_utils() {
 
 function setup_wasmedge() {
     chmod u+x /home/$USERNAME/.wasmedge/bin/wasmedge
+    # TODO: add to path
 
     # Create symbolic links in case they were not uploaded 
     ln -s /home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0 /home/$USERNAME/.wasmedge/lib64/libwasmedge.so
