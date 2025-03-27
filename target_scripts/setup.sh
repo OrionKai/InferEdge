@@ -9,7 +9,7 @@ export SUITE_NAME="CS4099Suite"
 
 
 function main() {
-    if [ "$uname -m" == "aarch64" ]; then
+    if [ "$(uname -m)" == "aarch64" ]; then
         arch="arm64"
     else
         arch="amd64"
@@ -60,7 +60,7 @@ function enable_memory_controller() {
     local cgroup_enable_param="cgroup_enable=memory"
     local current_cmdline_contents="$(cat "$cmdline_file")"
 
-    if !grep -q "$cgroup_enable_param" <<< "$current_cmdline_contents"
+    if ! grep -q "$cgroup_enable_param" <<< "$current_cmdline_contents"
     then 
         cp "$cmdline_file" "$cmdline_file.bak"
         local new_cmdline_contents="${current_cmdline_contents} ${cgroup_enable_param}"
