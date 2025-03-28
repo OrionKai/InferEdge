@@ -415,7 +415,7 @@ function transfer_suite_files() {
     sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/Desktop/$SUITE_NAME"
 
     # Transfer the suite files to the target machine
-    sshpass -p "$target_password" scp -r models inputs native wasm libtorch cadvisor prometheus python docker data_scripts/collect_data.py \
+    sshpass -p "$target_password" scp -r models inputs native wasm libtorch cadvisor prometheus python docker target_scripts data_scripts/collect_data.py \
         "$target_username"@"$target_address":/home/"$target_username"/Desktop/"$SUITE_NAME"
 
     # Create a directory in the suite directory to store results 
@@ -455,7 +455,7 @@ function run_setup_script() {
 
 function transfer_setup_script() {
     sshpass -p "$target_password" scp target_scripts/setup.sh "$target_username@$target_address":/home/"$target_username"/Desktop/"$SUITE_NAME"
-    echo "Please run the script on the target as follows: /home/$target_username/Desktop/$SUITE_NAME/setup.sh $SUITE_NAME $arch"
+    echo "Please run the script on the target as follows: /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh $SUITE_NAME $arch"
 }
 
 function run_data_collection() {
@@ -466,7 +466,34 @@ function run_data_collection() {
     local set_name
     read -p "Enter a name to identify this set of experiments: " set_name
 
-    sshpass -p "$target_password" ssh "$target_username@$target_address" 'bash -s' < target_scripts/collect_data.sh
+    local trials
+    read -p "Enter the number of trials to run for each experiment: " trials
+
+    echo "Which deployment mechanisms would you like to use?"
+        echo "1. Native"
+        echo "2. Docker"
+        echo "3. WebAssembly interpreted"
+        echo "4. WebAssembly ahead of time (AoT)-compiled"
+    local mechanisms_input
+    read -p "Enter the numbers identifying the deployment mechanisms you would like to use (comma-separated): " mechanisms_input
+
+    # Convert the mechanisms input into a comma-separated string eg. "native,docker"
+    IFS=',' read -ra mechanisms_array <<< "$mechanisms_input"
+    local mechanisms=()
+
+    for mechanism in "${mechanisms_array[@]}"; do
+        case $mechanism in
+            1) mechanisms+=("native") ;;
+            2) mechanisms+=("docker") ;;
+            3) mechanisms+=("wasm_interpreted") ;;
+            4) mechanisms+=("wasm_aot") ;;
+        esac
+    done
+
+    mechanisms=$(IFS=,; echo "${mechanisms[*]}")
+
+    # TODO: add option to specify number of trials, and pass as argument
+    sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $trials $set_name $mechanisms"
 }
 
 function retrieve_data_collection_results() {
