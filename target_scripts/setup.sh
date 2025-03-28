@@ -3,16 +3,14 @@
 # in preparation for the experiments.
 
 export USERNAME=${SUDO_USER:-$(whoami)}
-export SUITE_NAME="CS4099Suite"
+export SUITE_PATH="/home/$USERNAME/Desktop/CS4099Suite"
 
 function main() {
-    if [ "$uname -m" == "aarch64" ]; then
+    if [ "$(uname -m)" == "aarch64" ]; then
         arch="arm64"
     else
         arch="amd64"
     fi
-
-    suite_path="/home/$USERNAME/Desktop/$SUITE_NAME"
 
     apt-get update
 
@@ -23,26 +21,29 @@ function main() {
         enable_memory_controller
     fi
 
+    install_time
     setup_docker
     load_docker_image
     setup_cadvisor
     setup_prometheus
     setup_python
-
+    setup_collect_data
     # TODO: test if Darwin actually shows up on Ubuntu VM on Mac, else ask interactively
-    if [ "$uname -m" != "Darwin" ]; then
+    # Setup LD_LIBRARY_PATH in preparation for AoT compilation
+    export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$SUITE_PATH/libtorch/lib
+    if [ "$(uname)" != "Darwin" ]; then
         aot_compile_wasm_non_mac
     else
         aot_compile_wasm_mac
     fi
 }
 
-function install_utils() {
-    apt-get install -y grep
+function install_time() {
+    apt-get install -y time
 }
 
 function setup_wasmedge() {
-    chmod u+x /home/$USERNAME/.wasmedge/bin/wasmedge
+    chmod u+x "/home/$USERNAME/.wasmedge/bin/wasmedge"
 
     # Add wasmedge to the PATH for the remainder of this script
     # since it will be used in various parts
@@ -50,8 +51,8 @@ function setup_wasmedge() {
 
 
     # Create symbolic links in case they were not uploaded 
-    ln -s /home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0 /home/$USERNAME/.wasmedge/lib64/libwasmedge.so
-    ln -s /home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0 /home/$USERNAME/.wasmedge/plugin/libwasmedge.so.0
+    ln -s "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0" "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so"
+    ln -s "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0" "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0"
 }
 
 function enable_memory_controller() {
@@ -61,7 +62,7 @@ function enable_memory_controller() {
     local cgroup_enable_param="cgroup_enable=memory"
     local current_cmdline_contents="$(cat "$cmdline_file")"
 
-    if !grep -q "$cgroup_enable_param" <<< "$current_cmdline_contents"
+    if ! grep -q "$cgroup_enable_param" <<< "$current_cmdline_contents"
     then 
         cp "$cmdline_file" "$cmdline_file.bak"
         local new_cmdline_contents="${current_cmdline_contents} ${cgroup_enable_param}"
@@ -76,8 +77,8 @@ function setup_docker() {
             echo "2. No"
         read -p "Enter the number identifying your choice: " choice
         if [ "$choice" == "1" ]; then
-            chmod u+x "$suite_path"/docker/install-docker.sh
-            "$suite_path"/docker/install-docker.sh
+            chmod u+x "$SUITE_PATH/docker/install-docker.sh"
+            "$SUITE_PATH"/docker/install-docker.sh
         else
             echo "Please install Docker manually and re-run this script."
             exit 1
@@ -86,16 +87,16 @@ function setup_docker() {
 }
 
 function load_docker_image() {
-    docker load -i "image-classification-$arch.tar"
+    docker load -i "$SUITE_PATH/docker/image-classification-$arch.tar"
 }
 
 function setup_cadvisor() {
-    chmod u+x $suite_path/cadvisor/cadvisor
+    chmod u+x "$SUITE_PATH/cadvisor/cadvisor"
     apt install libpfm4 linux-perf
 }
 
 function setup_prometheus() {
-    chmod u+x $suite_path/prometheus/prometheus
+    chmod u+x "$SUITE_PATH/prometheus/prometheus"
 }
 
 function setup_python() {
@@ -115,18 +116,22 @@ function setup_python() {
     fi
 
     apt install -y cgroup-tools
-    python3 -m venv "$suite_path/myenv" 
-    source "$suite_path/myenv/bin/activate" && pip install -r "$suite_path/python/target/requirements.txt"
+    python3 -m venv "$SUITE_PATH/myenv" 
+    source "$SUITE_PATH/myenv/bin/activate" && pip install -r "$SUITE_PATH/python/target/requirements.txt"
+}
+
+function setup_collect_data() {
+    chmod u+x "$SUITE_PATH/target_scripts/collect_data.sh"
 }
 
 function aot_compile_wasm_non_mac() {
     # AoT compile the WebAssembly code (if not on Mac)
-    wasmedge compile "$suite_path/wasm/interpreted.wasm" "$suite_path/wasm/aot.wasm"
+    wasmedge compile "$SUITE_PATH/wasm/interpreted.wasm" "$SUITE_PATH/wasm/aot.wasm"
 }
 
 function aot_compile_wasm_mac() {
     # AoT compile the WebAssembly code (if on Mac)
-    wasmedge compile "$suite_path/wasm/interpreted.wasm" "$suite_path/wasm/aot.so"
+    wasmedge compile "$SUITE_PATH/wasm/interpreted.wasm" "$SUITE_PATH/wasm/aot.so"
 }
 
 main
