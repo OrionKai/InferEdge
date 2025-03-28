@@ -436,7 +436,8 @@ function setup_target_machine() {
     # Ask the user if they want to run the script directly, in case the target
     # machine has an Internet connection, or if they want to simply transfer it in
     # case the target machine cannot access the Internet while connected to the host
-    echo "How would you like to setup the target machine?"
+    echo "How would you like to setup the target machine? Note that running the script
+        requires that the target machine has an Internet connection."
         echo "1. Run the setup script directly on the target machine"
         echo "2. Transfer the setup script to the target machine, so you can run it there manually"
     local setup_option
@@ -489,3 +490,5 @@ function run_data_analysis() {
 }
 
 main
+
+python3 data_scripts/analyze_data.py --perf_results results/s2w5results/2025-03-09T19\:36\:39.811039mobilenet.ptinput.jpgperf_results.csv --time_results results/s2w5results/2025-03-09T19\:36\:39.811039mobilenet.ptinput.jpgtime_results.csv 
