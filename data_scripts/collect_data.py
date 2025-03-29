@@ -99,7 +99,7 @@ MAX_RSS_RESULTS_FILENAME = "max_rss_results.csv"
 CSV_BASIC_FIELD_NAMES = ["deployment-mechanism", "trial-number", "start-time"] 
 
 # Field names for memory metrics
-MEMORY_FIELD_NAMES = ["avg-memory-over_time-sampled", "max-memory-over-time-sampled", "max-memory-over-time"]
+MEMORY_FIELD_NAMES = ["avg-memory-over-time-sampled", "max-memory-over-time-sampled", "max-memory-over-time"]
 
 # Field names for CPU metrics
 CPU_FIELD_NAMES = ["cpu-total-utilization", "cpu-user-utilization", "cpu-system-utilization"]
@@ -156,27 +156,6 @@ PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_DURING_CONTAINER = [PROMETHEUS_PERF_QU
 for query in PROMETHEUS_PERF_AND_MEMORY_QUERIES[1:]:
     PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_DURING_CONTAINER.append(query.replace("{name_or_id}", DAEMON_ID))
 
-# Gets the combined metrics for the container and the Docker daemon
-PROMETHEUS_DOCKER_COMBINED_PERF_AND_MEMORY_QUERIES = ["""sum by (event) (increase(container_perf_events_total{{id='/system.slice/docker.service'}}[{container_duration_ms}ms] 
-    @ {end_container_timestamp:.2f})) 
-    + 
-    sum by (event) (increase(container_perf_events_total{{id='{name_or_id}'}}[{container_duration_ms}ms] 
-    @ {end_container_timestamp:.2f}))""",
-    "avg_over_time(combined_memory_usage_bytes[{container_duration_ms}ms] @ {end_container_timestamp:.2f})",
-    "max_over_time(combined_memory_usage_bytes[{container_duration_ms}ms] @ {end_container_timestamp:.2f})",
-    """100 * ( sum(rate(container_cpu_usage_seconds_total{{id='/system.slice/docker.service'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f}))
-    + 
-    sum(rate(container_cpu_usage_seconds_total{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})) )""" 
-    + f" / {NUM_CORES}",
-    """100 * ( sum(rate(container_cpu_user_seconds_total{{id='/system.slice/docker.service'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f}))
-    +
-    sum(rate(container_cpu_user_seconds_total{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})) )""" 
-    + f" / {NUM_CORES}",
-    """100 * ( sum(rate(container_cpu_system_seconds_total{{id='/system.slice/docker.service'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f}))
-    +
-    sum(rate(container_cpu_system_seconds_total{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})) )""" 
-    + f" / {NUM_CORES}",
-]
 PROMETHEUS_DOCKER_DAEMON_MEMORY_QUERY = "container_memory_usage_bytes{{id='/system.slice/docker.service'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f}"
 PROMETHEUS_DOCKER_CONTAINER_MEMORY_QUERY = "container_memory_usage_bytes{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f}"
 
@@ -464,6 +443,7 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
 def start_cadvisor_and_prometheus():
     start_cadvisor()
     start_prometheus()
+    global cadvisor_and_prometheus_running
     cadvisor_and_prometheus_running = True
 
 def start_prometheus():
@@ -483,6 +463,7 @@ def start_cadvisor_and_prometheus_if_not_running():
 def stop_cadvisor_and_prometheus():
     stop_cadvisor()
     stop_prometheus()   
+    global cadvisor_and_prometheus_running
     cadvisor_and_prometheus_running = False
 
 def stop_prometheus():
@@ -606,7 +587,15 @@ def stop_container(container_name):
 
 def remove_container(container_name):
     cmd = CONTAINER_REMOVE_CMD.format(container_name=container_name).split()
-    run_shell_cmd(cmd)
+
+    try:
+        run_shell_cmd(cmd)
+    except subprocess.CalledProcessError as e:
+        # The following error happens if the container was not successfully
+        # started in the first place; this does not necessarily indicate a 
+        # major failure so we can ignore it
+        if "No such container" not in e.stderr:
+            raise
 
 def remove_container_and_its_prometheus_data(container_name):
     remove_container(container_name)
@@ -665,8 +654,17 @@ def delete_prometheus_series_given_name(name):
     delete_prometheus_series(match)
 
 def cleanup_custom_cgroup():
-    run_shell_cmd(DELETE_CGROUP_CMD.split())
+    if cgroup_exists(CUSTOM_CGROUP_NAME):
+        run_shell_cmd(DELETE_CGROUP_CMD.split())
     delete_prometheus_series_given_id(CUSTOM_CGROUP_NAME)
+
+def cgroup_exists(cgroup_name):
+    # For cgroup v1, check in /sys/fs/cgroup/memory/cgroup_name
+    path_v1 = f"/sys/fs/cgroup/memory/{cgroup_name}"
+    # For cgroup v2, typically the unified hierarchy is mounted at /sys/fs/cgroup
+    path_v2 = f"/sys/fs/cgroup/{cgroup_name}"
+    
+    return os.path.exists(path_v1) or os.path.exists(path_v2)
 
 def cleanup_daemon_cgroup():
     delete_prometheus_series_given_id(DAEMON_ID)
@@ -756,7 +754,7 @@ def main():
     try:
         # TODO: clean up custom cgroup in case previous execution did not terminate properly
         collect_perf_data(trials, PERF_EVENTS, results_filename_prefix_with_path + PERF_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
-        collect_time_data(trials, TIME_METRICS, results_filename_prefix_with_path + TIME_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        #collect_time_data(trials, TIME_METRICS, results_filename_prefix_with_path + TIME_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
     finally:
         stop_cadvisor_and_prometheus()
 
