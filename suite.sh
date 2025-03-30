@@ -164,9 +164,8 @@ function install_python_and_dependencies() {
 
 function generate_model_files() {
     echo "Generating model files..."
-    for script in models/gen_*.py; do
-        python3 "$script"
-    done
+
+    mkdir -p models
 
     generate_mobilenet_model
     generate_efficientnet_models
@@ -203,7 +202,7 @@ function generate_efficientnet_models() {
     done
 
     cd models
-    python3 ../host_scripts/gen_efficientnet_models.py "${efficientnet_models[@]}"
+    python3 ../host_scripts/model_generation/gen_efficientnet_models.py "${efficientnet_models[@]}"
     cd -
 }
 
@@ -231,7 +230,7 @@ function generate_resnet_models() {
     done
 
     cd models
-    python3 ../host_scripts/gen_resnet_models.py "${resnet_models[@]}"
+    python3 ../host_scripts/model_generation/gen_resnet_models.py "${resnet_models[@]}"
     cd -
 }
 
@@ -244,7 +243,7 @@ function generate_mobilenet_model() {
 
     if [ "$mobilenet_input" = "1" ]; then
         cd models
-        python3 ../host_scripts/gen_mobilenet_model.py
+        python3 ../host_scripts/model_generation/gen_mobilenet_model.py
         cd -
     fi
 }
@@ -493,7 +492,6 @@ function run_data_collection() {
 
     mechanisms=$(IFS=,; echo "${mechanisms[*]}")
 
-    # TODO: add option to specify number of trials, and pass as argument
     sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $trials $set_name $mechanisms"
 }
 
