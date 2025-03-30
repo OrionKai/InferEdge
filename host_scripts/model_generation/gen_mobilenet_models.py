@@ -2,6 +2,7 @@ import os
 import torch
 from torch import jit
 from torchvision.models import mobilenet_v3_small, mobilenet_v3_large
+import argparse
 
 def main():
     # Parse input arguments representing which variants to generate

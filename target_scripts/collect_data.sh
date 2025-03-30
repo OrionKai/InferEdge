@@ -24,7 +24,7 @@ function main() {
     mechanisms=$3
 
     cd $SUITE_PATH
-    mkdir results/$set_name
+    mkdir -p results/$set_name
     source myenv/bin/activate
 
     run_data_collection $trials

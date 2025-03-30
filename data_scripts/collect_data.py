@@ -9,7 +9,7 @@ import random
 import os
 import argparse
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from sys import platform
 
 # The absolute path of the "scripts" directory where this script is in TODO: fix
@@ -200,7 +200,7 @@ def collect_time_data(n, time_metrics, results_filename, container_exec_cmd, con
 
     for experiment in experiments:
         print(f"Starting {experiment} experiment")
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         trial_metrics = {}
 
         if experiment == "docker":
@@ -356,7 +356,7 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
 
     for experiment in experiments:
         print(f"Starting {experiment} experiment")
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         trial_metrics = {}
         
         if experiment == "docker":
@@ -480,13 +480,13 @@ def run_non_container_perf_and_memory_experiment(perf_events, cmd):
     # Create the cgroup that the process will be assigned to
     run_shell_cmd(CREATE_CGROUP_CMD.split())
 
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
     start_timestamp = start_time.timestamp()
 
     run_in_cgroup_cmd = EXEC_IN_CGROUP_CMD_PREFIX.split() + cmd.split()
     run_shell_cmd(run_in_cgroup_cmd)
 
-    end_time = datetime.utcnow()
+    end_time = datetime.now(timezone.utc)
     end_timestamp = end_time.timestamp()
 
     execution_duration_ms = round((end_timestamp - start_timestamp) * 1000)
@@ -514,7 +514,7 @@ def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, co
     daemon_metrics_baseline = {}
     time.sleep(DAEMON_MEASUREMENT_TIME)
 
-    curr_time = datetime.utcnow()
+    curr_time = datetime.now(timezone.utc)
     curr_timestamp = curr_time.timestamp()
 
     for query, label in zip(PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_BASELINE, PROMETHEUS_QUERIES_LABELS):
@@ -523,13 +523,13 @@ def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, co
         daemon_metrics_baseline.update(get_parsed_prometheus_query_results(formatted_query, label))
 
     # Run the container and time the execution
-    start_container_time = datetime.utcnow()
+    start_container_time = datetime.now(timezone.utc)
     start_container_timestamp = start_container_time.timestamp()
 
     container_cmd = container_start_cmd.split() + container_exec_cmd.split()
     run_shell_cmd(container_cmd)
 
-    end_container_time = datetime.utcnow()
+    end_container_time = datetime.now(timezone.utc)
     end_container_timestamp = end_container_time.timestamp()
 
     container_duration_ms = round((end_container_timestamp - start_container_timestamp) * 1000)
@@ -742,6 +742,8 @@ def main():
     results_filename_prefix_with_path = os.path.join(RESULTS_DIR, set_name, results_filename_prefix)
 
     try:
+        print("CURRENT TIME", datetime.now(timezone.utc))
+        print("CURRENT TIME", datetime.now(timezone.utc).timestamp())
         # TODO: clean up custom cgroup in case previous execution did not terminate properly
         collect_perf_data(trials, PERF_EVENTS, results_filename_prefix_with_path + PERF_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
         collect_time_data(trials, TIME_METRICS, results_filename_prefix_with_path + TIME_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)

@@ -254,7 +254,7 @@ function generate_mobilenet_model() {
     done
 
     cd models
-    python3 ../host_scripts/gen_mobilenet_models.py "${mobilenet_models[@]}"
+    python3 ../host_scripts/model_generation/gen_mobilenet_models.py "${mobilenet_models[@]}"
     cd -
 }
 
