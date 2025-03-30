@@ -90,10 +90,9 @@ TIME_METRICS = [("Elapsed (wall clock) time", "wall-time-seconds")]
 # The endpoint that Prometheus is listening on
 PROMETHEUS_URL="http://localhost:9090"
 
-# The name of the files to store results in
-PERF_RESULTS_FILENAME = "perf_results.csv"
-TIME_RESULTS_FILENAME = "time_results.csv"
-MAX_RSS_RESULTS_FILENAME = "max_rss_results.csv"
+# The suffixes of the filenames to store results in
+PERF_RESULTS_FILENAME_SUFFIX = "_perf_results.csv"
+TIME_RESULTS_FILENAME_SUFFIX = "_time_results.csv"
 
 # Basic field names to include in every CSV file storing experiment results
 CSV_BASIC_FIELD_NAMES = ["deployment-mechanism", "trial-number", "start-time"] 
@@ -753,8 +752,8 @@ def main():
 
     try:
         # TODO: clean up custom cgroup in case previous execution did not terminate properly
-        collect_perf_data(trials, PERF_EVENTS, results_filename_prefix_with_path + PERF_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
-        collect_time_data(trials, TIME_METRICS, results_filename_prefix_with_path + TIME_RESULTS_FILENAME, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        collect_perf_data(trials, PERF_EVENTS, results_filename_prefix_with_path + PERF_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        collect_time_data(trials, TIME_METRICS, results_filename_prefix_with_path + TIME_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
     finally:
         stop_cadvisor_and_prometheus()
 

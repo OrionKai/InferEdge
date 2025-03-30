@@ -166,9 +166,8 @@ function install_python_and_dependencies() {
 
 function generate_model_files() {
     echo "Generating model files..."
-    for script in models/gen_*.py; do
-        python3 "$script"
-    done
+
+    mkdir -p models
 
     generate_mobilenet_model
     generate_efficientnet_models
@@ -205,7 +204,7 @@ function generate_efficientnet_models() {
     done
 
     cd models
-    python3 ../host_scripts/gen_efficientnet_models.py "${efficientnet_models[@]}"
+    python3 ../host_scripts/model_generation/gen_efficientnet_models.py "${efficientnet_models[@]}"
     cd -
 }
 
@@ -233,7 +232,7 @@ function generate_resnet_models() {
     done
 
     cd models
-    python3 ../host_scripts/gen_resnet_models.py "${resnet_models[@]}"
+    python3 ../host_scripts/model_generation/gen_resnet_models.py "${resnet_models[@]}"
     cd -
 }
 
@@ -249,8 +248,8 @@ function generate_mobilenet_model() {
 
     for mobilenet_model_idx in "${mobilenet_models_idx[@]}"; do
         case $mobilenet_model_idx in
-            1) mobilenet_models+=("--small") ;;
-            2) mobilenet_models+=("--large") ;;
+            1) mobilenet_models+=("--mobilenetv3_small") ;;
+            2) mobilenet_models+=("--mobilenetv3_large") ;;
         esac
     done
 
@@ -446,7 +445,8 @@ function setup_target_machine() {
     # Ask the user if they want to run the script directly, in case the target
     # machine has an Internet connection, or if they want to simply transfer it in
     # case the target machine cannot access the Internet while connected to the host
-    echo "How would you like to setup the target machine?"
+    echo "How would you like to setup the target machine? Note that running the script
+        requires that the target machine has an Internet connection."
         echo "1. Run the setup script directly on the target machine"
         echo "2. Transfer the setup script to the target machine, so you can run it there manually"
     local setup_option
@@ -502,7 +502,6 @@ function run_data_collection() {
 
     mechanisms=$(IFS=,; echo "${mechanisms[*]}")
 
-    # TODO: add option to specify number of trials, and pass as argument
     sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $trials $set_name $mechanisms"
 }
 
@@ -526,3 +525,5 @@ function run_data_analysis() {
 }
 
 main
+
+python3 data_scripts/analyze_data.py --perf_results results/s2w5results/2025-03-09T19\:36\:39.811039mobilenet.ptinput.jpgperf_results.csv --time_results results/s2w5results/2025-03-09T19\:36\:39.811039mobilenet.ptinput.jpgtime_results.csv 
