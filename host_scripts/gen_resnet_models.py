@@ -49,16 +49,19 @@ def generate_resnet_models(resnet_variants, resnet_weights, resnet_numbers):
 
     for idx, model_fn in enumerate(resnet_variants):
         # Load the pretrained model
-        model = model_fn(weights=resnet_weights[idx])
+        model = model_fn(pretrained=True)
         model.eval()
         
         # Convert the model into a TorchScript module using tracing,
         # passing in the dummy input to trace
         traced_model = jit.trace(model, fake_input)
 
+        # Freeze the model to optimize it
+        frozen_model = torch.jit.freeze(traced_model)
+        
         # Save the frozen model
         filename = f"resnet{resnet_numbers[idx]}.pt"
-        traced_model.save(filename)
+        frozen_model.save(filename)
 
 if __name__ == "__main__":
     main()
