@@ -45,12 +45,6 @@ function prompt_user_for_architecture() {
     done
 
     echo "Architecture set to $arch."
-
-    # If target architecture is aarch64, set up QEMU
-    if [ "$arch" = "arm64" ]; then
-        echo "Setting up QEMU for aarch64..."
-        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-    fi
 }
 
 function prompt_user_for_action() {
@@ -109,6 +103,9 @@ function prompt_user_for_specific_actions() {
 
 function acquire_files() {
     prompt_user_for_architecture_if_not_set
+    if [ "$arch" = "arm64" ]; then
+        setup_qemu
+    fi
     # install_rust
     # install_python_and_dependencies # TODO: check if torchvision really required
     # generate_model_files
@@ -122,6 +119,11 @@ function acquire_files() {
     # download_prometheus 
     build_docker_and_native 
     # compile_wasm 
+}
+
+function setup_qemu() {
+    echo "Setting up QEMU for aarch64..."
+    docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 }
 
 function install_rust() {
@@ -515,7 +517,7 @@ function retrieve_data_collection_results() {
     local set_name
     read -p "Enter the name of the set of experiments to retrieve results from: " set_name
 
-    sshpass -p "$target_password" scp -r "$target_username@$target_address:/home/$target_username/$SUITE_NAME/results/$set_name" results
+    sshpass -p "$target_password" scp -r "$target_username@$target_address:/home/$target_username/Desktop/$SUITE_NAME/results/$set_name" results
 }
 
 function run_data_analysis() {
