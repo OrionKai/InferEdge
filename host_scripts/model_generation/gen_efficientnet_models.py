@@ -48,10 +48,10 @@ def generate_efficientnet_models(efficientnet_variants):
 
         # Convert the model into a TorchScript module using tracing,
         # passing in the dummy input to trace
-        scripted_model = torch.jit.trace(model, fake_input)
+        traced_model = torch.jit.trace(model, fake_input)
         
-        # Freeze the scripted model to remove dynamic behavior
-        frozen_model = torch.jit.freeze(scripted_model)
+        # Freeze the model to optimize it
+        frozen_model = torch.jit.freeze(traced_model)
         
         # Save the frozen model
         filename = f"efficientnet_b{idx}.pt"

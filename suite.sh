@@ -159,6 +159,8 @@ function install_python_and_dependencies() {
 
     python3 -m venv myenv
     source myenv/bin/activate
+
+    # Check
     pip install -r python/host/requirements.txt
 }
 
@@ -235,17 +237,25 @@ function generate_resnet_models() {
 }
 
 function generate_mobilenet_model() {
-    echo "Would you like to generate the MobileNet model?"
-        echo "1. Yes"
-        echo "2. No"
+    echo "Which MobileNet models would you like to generate?"
+        echo "1. MobileNetV3-Small"
+        echo "2. MobileNetV3-Large"
     local mobilenet_input
-    read -p "Enter the number identifying your choice: " mobilenet_input
+    read -p "Enter the numbers identifying the MobileNet models you would like to generate (comma-separated): " mobilenet_input
+    
+    IFS="," read -r -a mobilenet_models_idx <<< "$mobilenet_input"
+    local mobilenet_models=()
 
-    if [ "$mobilenet_input" = "1" ]; then
-        cd models
-        python3 ../host_scripts/model_generation/gen_mobilenet_model.py
-        cd -
-    fi
+    for mobilenet_model_idx in "${mobilenet_models_idx[@]}"; do
+        case $mobilenet_model_idx in
+            1) mobilenet_models+=("--mobilenetv3_small") ;;
+            2) mobilenet_models+=("--mobilenetv3_large") ;;
+        esac
+    done
+
+    cd models
+    python3 ../host_scripts/gen_mobilenet_models.py "${mobilenet_models[@]}"
+    cd -
 }
 
 function acquire_files_arm64_specific() {
