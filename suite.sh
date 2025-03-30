@@ -59,12 +59,14 @@ function prompt_user_for_action() {
             echo "1. Run the entire suite"
             echo "2. Perform specific actions"
             echo "3. Set/change target machine details"
+            echo "4. Exit"
         local action
         read -p "Enter the number identifying the action you would like to perform: " action
         case $action in
             1) run_suite ;;
             2) prompt_user_for_specific_actions ;;
             3) prompt_user_for_target_details ;;
+            4) exit 0 ;;
             *) echo "Invalid option." ;;
         esac
     done
