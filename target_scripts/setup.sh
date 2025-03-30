@@ -6,6 +6,16 @@ export USERNAME=${SUDO_USER:-$(whoami)}
 export SUITE_PATH="/home/$USERNAME/Desktop/CS4099Suite"
 
 function main() {
+    # Check if user passed in an optional argument specifying the target machine
+    # is on a Mac
+    while getopts "m" opt; do
+        case $opt in
+            m) mac=1 ;;
+            \?) echo "Invalid option: -$OPTARG" >&2
+                exit 1 ;;
+        esac
+    done
+
     if [ "$(uname -m)" == "aarch64" ]; then
         arch="arm64"
     else
@@ -28,13 +38,13 @@ function main() {
     setup_prometheus
     setup_python
     setup_collect_data
-    # TODO: test if Darwin actually shows up on Ubuntu VM on Mac, else ask interactively
+
     # Setup LD_LIBRARY_PATH in preparation for AoT compilation
     export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$SUITE_PATH/libtorch/lib
-    if [ "$(uname)" != "Darwin" ]; then
-        aot_compile_wasm_non_mac
-    else
+    if [ "$mac" == 1 ]; then
         aot_compile_wasm_mac
+    else
+        aot_compile_wasm_non_mac
     fi
 }
 

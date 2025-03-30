@@ -21,7 +21,6 @@ function prompt_user_for_target_details() {
     read -p "Enter the target machine's username: " target_username
     read -s -p "Enter the target machine's password: " target_password
     echo
-    prompt_user_for_architecture_if_not_set
 }
 
 function prompt_user_for_architecture_if_not_set() {
@@ -464,11 +463,23 @@ function setup_target_machine() {
 }
 
 function run_setup_script() {
-    sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh"
+    echo "Is the target machine a Mac?"
+        echo "1. Yes"
+        echo "2. No"
+    local is_mac
+    read -p "Enter the number identifying the correct option: " is_mac
+    
+    if [ "$is_mac" == 1 ]; then
+        sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh -m"
+    else
+        sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh"
+    fi
 }
 
 function transfer_setup_script() {
-    echo "Please run the script on the target as follows: /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh $SUITE_NAME $arch"
+    echo "Please run the script on the target as follows: /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh"
+    echo "If the target is on a Mac, please run the script on the target as follows instead: /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh -m"
+
     echo "You may need to disconnect the target machine's Ethernet connection to allow it to connect to the Internet"
 }
 
@@ -506,7 +517,17 @@ function run_data_collection() {
 
     mechanisms=$(IFS=,; echo "${mechanisms[*]}")
 
-    sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $trials $set_name $mechanisms"
+    echo "Would you like to allow experiment trials to have missing data on perf metrics (e.g. instructions-retired)?"
+    echo "If you have doubts that the target machine can access perf metrics, you should answer 'yes'."
+        echo "1. Yes"
+        echo "2. No"
+    local allow_missing_perf_events_input
+
+    if [ allow_missing_perf_events_input == 1 ]; then
+        sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $trials $set_name $mechanisms --allow_missing_perf_events"
+    else
+        sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $trials $set_name $mechanisms"
+    fi
 }
 
 function retrieve_data_collection_results() {

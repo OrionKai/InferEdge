@@ -173,7 +173,7 @@ def is_mac():
     return platform == "darwin"
 
 def collect_time_data(n, time_metrics, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
-    deployment_mechanisms=["docker","wasm_interpreted","wasm_aot","native"]):
+    deployment_mechanisms):
     time_metrics_short_names = [time_metric[1] for time_metric in time_metrics]
 
     # Randomly intersperse experiments of each type
@@ -266,7 +266,7 @@ def collect_time_data(n, time_metrics, results_filename, container_exec_cmd, con
     field_names = CSV_BASIC_FIELD_NAMES + time_metrics_short_names
     write_metrics_to_csv(results_filename, field_names, metrics)
 
-def prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics_sets, metrics_keys):
+def prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics_sets, metrics_keys, allow_missing_perf_events=False):
     # trial_metrics_sets is a list of tuples in format ("special_identifier", trial_metrics_set)
     # where trial_metrics_set is a list consisting of the trial metrics themselves
     # Used so can store different types of metrics for the same experiment type, eg. for
@@ -285,8 +285,12 @@ def prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics_
         }
 
         for metric_key in metrics_keys:
-            trial_metrics_row[metric_key] = trial_metrics[metric_key]
-        
+            try:
+                trial_metrics_row[metric_key] = trial_metrics[metric_key]
+            except KeyError:
+                if not (metric_key in PERF_EVENTS and allow_missing_perf_events):
+                    raise
+
         trial_metrics_rows.append(trial_metrics_row)
 
     return trial_metrics_rows
@@ -330,8 +334,8 @@ def parse_time_output(output, time_metrics):
 
     return metrics
 
-def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
-    deployment_mechanisms=["docker", "wasm_interpreted", "wasm_aot", "native"]):
+def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, 
+    allow_missing_perf_events, deployment_mechanisms):
     # Randomly intersperse experiments of each type
     experiments = []
     if "docker" in deployment_mechanisms:
@@ -368,7 +372,7 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
                     trial_metrics = run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, container_start_cmd)
                     remove_container_and_its_prometheus_data(CONTAINER_NAME)
                     trial_metrics_row = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, 
-                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES)
+                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_perf_events)
                     metrics.extend(trial_metrics_row)
                     break
                 except Exception as e:
@@ -385,7 +389,7 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
                 try:
                     trial_metrics = run_non_container_perf_and_memory_experiment(perf_events, wasm_interpreted_cmd)
                     trial_metrics_row = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, 
-                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES)
+                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_perf_events)
                     metrics.extend(trial_metrics_row)
                     break
                 except Exception as e:
@@ -402,7 +406,7 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
                 try:
                     trial_metrics = run_non_container_perf_and_memory_experiment(perf_events, wasm_aot_cmd)
                     trial_metrics_row = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, 
-                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES)
+                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_perf_events)
                     metrics.extend(trial_metrics_row)
                     break
                 except Exception as e:
@@ -420,7 +424,7 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
                     trial_metrics = run_non_container_perf_and_memory_experiment(perf_events, native_cmd)
                     #delete_prometheus_series_given_id(f"/{CUSTOM_CGROUP_NAME}") TODO: check if this was necessary
                     trial_metrics_row = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, 
-                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES)
+                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_perf_events)
                     metrics.extend(trial_metrics_row)
                     break
                 except Exception as e:
@@ -704,6 +708,7 @@ def main():
                         help="Comma-separated list of mechanisms to include (choose from docker, wasm_interpreted, wasm_aot, native)")
     parser.add_argument("--arch", type=str, required=True, help="The architecture of the target device this is being run on")
     parser.add_argument("--set_name", type=str, required=True, help="The name of the set of experiments being run")
+    parser.add_argument("--allow_missing_perf_events", action="store_true", help="Allow missing perf events in the results")
 
     args = parser.parse_args()
     model = args.model
@@ -712,6 +717,7 @@ def main():
     mechanisms = set(m.strip().lower() for m in args.mechanisms.split(","))
     arch = args.arch
     set_name = args.set_name
+    allow_missing_perf_events = args.allow_missing_perf_events
 
     # Path to the model and input
     model_path = f"models/{model}"
@@ -745,7 +751,7 @@ def main():
         print("CURRENT TIME", datetime.now(timezone.utc))
         print("CURRENT TIME", datetime.now(timezone.utc).timestamp())
         # TODO: clean up custom cgroup in case previous execution did not terminate properly
-        collect_perf_data(trials, PERF_EVENTS, results_filename_prefix_with_path + PERF_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        collect_perf_data(trials, PERF_EVENTS, results_filename_prefix_with_path + PERF_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, allow_missing_perf_events, mechanisms)
         collect_time_data(trials, TIME_METRICS, results_filename_prefix_with_path + TIME_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
     finally:
         stop_cadvisor_and_prometheus()
