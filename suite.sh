@@ -107,19 +107,19 @@ function prompt_user_for_specific_actions() {
 
 function acquire_files() {
     prompt_user_for_architecture_if_not_set
-    install_rust
-    install_python_and_dependencies # TODO: check if torchvision really required
-    generate_model_files
+    # install_rust
+    # install_python_and_dependencies # TODO: check if torchvision really required
+    # generate_model_files
 
-    case $arch in
-        "arm64") acquire_files_arm64_specific ;;
-        "amd64") acquire_files_amd64_specific ;;
-    esac
+    # case $arch in
+    #     "arm64") acquire_files_arm64_specific ;;
+    #     "amd64") acquire_files_amd64_specific ;;
+    # esac
 
-    build_cadvisor
-    download_prometheus 
+    # build_cadvisor
+    # download_prometheus 
     build_docker_and_native 
-    compile_wasm 
+    # compile_wasm 
 }
 
 function install_rust() {
@@ -385,6 +385,7 @@ function build_docker_and_native() {
 
     # Extract the binary compiled for the container so it can also be run for the 
     # native deployment mechanism
+    mkdir -p native
     local container_id=$(docker create "$image_name")
     docker cp "$container_id":/torch_image_classification native
 
@@ -447,8 +448,8 @@ function setup_target_machine() {
     # case the target machine cannot access the Internet while connected to the host
     echo "How would you like to setup the target machine? Note that running the script
         requires that the target machine has an Internet connection."
-        echo "1. Run the setup script directly on the target machine"
-        echo "2. Transfer the setup script to the target machine, so you can run it there manually"
+        echo "1. Run the setup script directly on the target machine from this machine"
+        echo "2. Run the setup script manually on the target machine"
     local setup_option
     read -p "Enter the number identifying the setup option: " setup_option
     case $setup_option in
@@ -459,13 +460,12 @@ function setup_target_machine() {
 }
 
 function run_setup_script() {
-    sshpass -p "$target_password" scp target_scripts/setup.sh "$target_username@$target_address":/home/"$target_username"/Desktop/"$SUITE_NAME"
-    sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/setup.sh"
+    sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh"
 }
 
 function transfer_setup_script() {
-    sshpass -p "$target_password" scp target_scripts/setup.sh "$target_username@$target_address":/home/"$target_username"/Desktop/"$SUITE_NAME"
     echo "Please run the script on the target as follows: /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh $SUITE_NAME $arch"
+    echo "You may need to disconnect the target machine's Ethernet connection to allow it to connect to the Internet"
 }
 
 function run_data_collection() {
