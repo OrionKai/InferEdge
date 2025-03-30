@@ -193,9 +193,6 @@ def is_cgroup_v2():
 def is_mac():
     return platform == "darwin"
 
-# Because collect_time_data only measures max RSS of the Docker command
-# used to tell the daemon to create the container, we need this experiment here to 
-# get accurate max RSS metrics for Docker
 def collect_time_data(n, time_metrics, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
     deployment_mechanisms=["docker","wasm_interpreted","wasm_aot","native"]):
     time_metrics_short_names = [time_metric[1] for time_metric in time_metrics]
@@ -525,7 +522,6 @@ def run_non_container_perf_and_memory_experiment(perf_events, cmd):
 
     return [("", metrics)]
 
-# TODO: remove perf_events
 def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, container_start_cmd):
     start_cadvisor_and_prometheus_if_not_running()
 
@@ -593,11 +589,6 @@ def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, co
 
     return [("_container", container_metrics), ("_container_and_daemon", container_and_daemon_metrics),
         ("_container_and_daemon_extra_overhead", container_and_daemon_extra_overhead_metrics)]
-
-def elementwise_sum(arr_x, arr_y):
-    if len(arr_x) != len(arr_y):
-        raise ValueError("Arrays must be of the same length to sum them elementwise")
-    return [x_val + y_val for x_val, y_val in zip(arr_x, arr_y)]
 
 def stop_container(container_name):
     cmd = CONTAINER_STOP_CMD.format(container_name=container_name).split()
