@@ -44,6 +44,28 @@ function prompt_user_for_architecture() {
     done
 
     echo "Architecture set to $arch."
+    prompt_user_for_mac_if_not_set
+}
+
+function prompt_user_for_mac_if_not_set() {
+    if [ -z "$is_mac" ]; then
+        prompt_user_for_mac
+    fi
+}
+
+function prompt_user_for_mac() {
+    while true; do
+        echo "Is the target machine a Mac?"
+            echo "1. Yes"
+            echo "2. No"
+        local is_mac_input
+        read -p "Enter the number identifying the correct option: " is_mac_input
+        case $is_mac_input in
+            1) is_mac=1; break ;;
+            2) is_mac=0; break ;;
+            *) echo "Invalid option." ;;
+        esac
+    done
 }
 
 function prompt_user_for_action() {
@@ -131,7 +153,7 @@ function install_rust() {
             echo "1. Yes"
             echo "2. No"
         read -p "Enter the number identifying your choice: " choice
-        if [ "$choice" == "1" ]; then
+        if [ "$choice" = "1" ]; then
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
             source $HOME/.cargo/env
         else
@@ -147,7 +169,7 @@ function install_python_and_dependencies() {
             echo "1. Yes"
             echo "2. No"
         read -p "Enter the number identifying your choice: " choice
-        if [ "$choice" == "1" ]; then
+        if [ "$choice" = "1" ]; then
             if [ "$uname -m" != "Darwin" ]; then
                 sudo apt install python3 python3-pip python3-venv
             else 
@@ -463,13 +485,9 @@ function setup_target_machine() {
 }
 
 function run_setup_script() {
-    echo "Is the target machine a Mac?"
-        echo "1. Yes"
-        echo "2. No"
-    local is_mac
-    read -p "Enter the number identifying the correct option: " is_mac
+    prompt_user_for_mac_if_not_set
     
-    if [ "$is_mac" == 1 ]; then
+    if [ "$is_mac" = 1 ]; then
         sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh -m"
     else
         sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh"
@@ -485,6 +503,7 @@ function transfer_setup_script() {
 
 function run_data_collection() {
     prompt_user_for_target_details_if_not_set
+    prompt_user_for_mac_if_not_set
 
     echo "Running data collection on target device..."
 
@@ -494,17 +513,44 @@ function run_data_collection() {
     local trials
     read -p "Enter the number of trials to run for each experiment: " trials
 
-    echo "Which deployment mechanisms would you like to use?"
+    prompt_user_for_mechanisms
+
+    echo "Would you like to allow experiment trials to have missing data on some metrics (e.g. instructions retired)?"
+    echo "If you have doubts that the target machine can access perf metrics, you should answer 'yes'."
+    echo "Additionally, if you are running the experiments on a virtual machine, you are advised to answer 'yes' as other metrics may be unavailable."
+        echo "1. Yes"
+        echo "2. No"
+    local allow_missing_metrics_input
+    read -p "Enter the number identifying your choice: " allow_missing_metrics_input
+    case $allow_missing_metrics_input in
+        1) allow_missing_metrics=1 ;;
+        2) allow_missing_metrics=0 ;;
+        *) echo "Invalid option." ;;
+    esac
+
+    options=""
+    if [ "$is_mac" = 1 ]; then
+        options="$options -m"
+    fi
+    if [ "$allow_missing_metrics" = 1 ]; then
+        options="$options -a"
+    fi
+
+    sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $options $trials $set_name $mechanisms"
+}
+
+function prompt_user_for_mechanisms() {
+    echo "Which deployment mechanisms would you like to include? Note that when analyzing data, you can only include deployment mechanisms that were included in the data collection."
         echo "1. Native"
         echo "2. Docker"
         echo "3. WebAssembly interpreted"
         echo "4. WebAssembly ahead of time (AoT)-compiled"
     local mechanisms_input
-    read -p "Enter the numbers identifying the deployment mechanisms you would like to use (comma-separated): " mechanisms_input
+    read -p "Enter the numbers identifying the deployment mechanisms you would like to include (comma-separated): " mechanisms_input
 
     # Convert the mechanisms input into a comma-separated string eg. "native,docker"
     IFS=',' read -ra mechanisms_array <<< "$mechanisms_input"
-    local mechanisms=()
+    mechanisms=()
 
     for mechanism in "${mechanisms_array[@]}"; do
         case $mechanism in
@@ -516,18 +562,6 @@ function run_data_collection() {
     done
 
     mechanisms=$(IFS=,; echo "${mechanisms[*]}")
-
-    echo "Would you like to allow experiment trials to have missing data on perf metrics (e.g. instructions-retired)?"
-    echo "If you have doubts that the target machine can access perf metrics, you should answer 'yes'."
-        echo "1. Yes"
-        echo "2. No"
-    local allow_missing_perf_events_input
-
-    if [ allow_missing_perf_events_input == 1 ]; then
-        sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $trials $set_name $mechanisms --allow_missing_perf_events"
-    else
-        sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $trials $set_name $mechanisms"
-    fi
 }
 
 function retrieve_data_collection_results() {
@@ -546,7 +580,137 @@ function run_data_analysis() {
 
     local set_name
     read -p "Enter the name of the set of experiments to analyze: " set_name
+
+    run_per_experiment_data_analysis set_name
+
+    echo "Would you like to perform aggregate analysis on the overall results of the entire set of experiments?"
+        echo "1. Yes"
+        echo "2. No"
+    local aggregate_analysis_input
+    read -p "Enter the number identifying your choice: " aggregate_analysis_input
+    case $aggregate_analysis_input in
+        1) run_aggregate_data_analysis set_name ;;
+        2) echo "Exiting..." ;;
+        *) echo "Invalid option." ;;
+    esac
+}
+
+function run_per_experiment_data_analysis() { 
+    set_name=$1
+
+    local significance_level
+    read -p "Enter the significance level to be used for the analysis (if nothing is entered, the default of 0.05 will be used): " significance_level
+    if [ -z "$significance_level" ]; then
+        significance_level=0.05
+    fi
+
+    local view_output
+    echo "Would you like to view the output for each experiment? If you answer 'no', you can still choose to save the outputs to files."
+        echo "1. Yes"
+        echo "2. No"
+    local view_output_input
+    read -p "Enter the number identifying your choice: " view_output_input
+    case $view_output_input in
+        1) view_output=1 ;;
+        2) view_output=0 ;;
+        *) echo "Invalid option." ;;
+    esac 
+
+    local save_output
+    echo "Would you like to save the output for each experiment to a file?"
+        echo "1. Yes"
+        echo "2. No"
+    local save_output_input
+    read -p "Enter the number identifying your choice: " save_output_input
+    case $save_output_input in
+        1) save_output=1 ;;
+        2) save_output=0 ;;
+        *) echo "Invalid option." ;;
+    esac
+
+    prompt_user_for_mechanisms
+    prompt_user_for_metrics set_name
+
+    echo "Which view of the Docker deployment mechanism's overhead would you like to use?"
+        echo "1. Include only the Docker container's overhead"
+        echo "2. Include the Docker container's overhead and the Docker daemon's full overhead"
+        echo "3. Include the Docker container's overhead and the Docker daemon's estimated additional overhead due to the container"
+    local docker_overhead_input
+    read -p "Enter the number identifying your choice: " docker_overhead_input
+    case $docker_overhead_input in
+        1) docker_overhead=1 ;;
+        2) docker_overhead=2 ;;
+        3) docker_overhead=3 ;;
+        *) echo "Invalid option." ;;
+    esac
+
+    local include_insig_output
+    echo "Would you like to print statistically insignificant output during the analysis?"
+        echo "1. Yes"
+        echo "2. No"
+    local include_insig_output_input
+    read -p "Enter the number identifying your choice: " include_insig_output_input
+    case $include_insig_output_input in
+        1) include_insig_output=1 ;;
+        2) include_insig_output=0 ;;
+        *) echo "Invalid option." ;;
+    esac
+
     host_scripts/analyze_data.sh results/$set_name false
+}
+
+function prompt_user_for_metrics() {
+    set_name=$1
+
+    echo "Based on the data collected, the following metrics are available for analysis:"
+        # Read one time file and one perf file to get the available metrics
+        time_file=$(ls results/$set_name/*time_results.csv | head -n 1)
+        perf_file=$(ls results/$set_name/*perf_results.csv | head -n 1)
+
+        # The first 3 columns are the same for all result files; they only include non-metric columns
+        # such as deployment mechanism, trial number and start time
+        time_metrics=$(head -n 1 "$time_file" | cut -d ',' -f 4-)
+        perf_metrics=$(head -n 1 "$perf_file" | cut -d ',' -f 4-)
+
+        echo "$time_metrics,$perf_metrics"
+    read -p "Enter the metrics you would like to analyze (comma-separated). If nothing is entered, all metrics will be used: " metrics
+    if [ -z "$metrics" ]; then
+        metrics="$time_metrics,$perf_metrics"
+    fi
+}
+
+function run_aggregate_data_analysis() {
+    set_name=$1
+
+    # parser.add_argument("--experiment-set", type=str, required=True, help="The experiment set to analyze.")
+    # parser.add_argument("--compare-across-models", action="store_true", help="Compare across models.")
+    # parser.add_argument("--models-to-compare", type=str, nargs="+", help="The models to compare.")
+    # parser.add_argument("--input", type=str, help="The single input to use in comparing models.")
+    # parser.add_argument("--compare-across-inputs", action="store_true", help="Compare across inputs.")
+    # parser.add_argument("--inputs-to-compare", type=str, nargs="+", help="The inputs to compare.")
+    # parser.add_argument("--model", type=str, help="The model to use in comparing inputs.")
+    # parser.add_argument("--metrics", type=str, nargs="+", default=["wall-time-seconds"], help="The metrics to analyze.")
+
+    echo "Would you like to compare across models?"
+        echo "1. Yes"
+        echo "2. No"
+    local compare_across_models_input
+    read -p "Enter the number identifying your choice: " compare_across_models_input
+    case $compare_across_models_input in
+        1) compare_across_models=1 ;;
+        2) compare_across_models=0 ;;
+        *) echo "Invalid option." ;;
+    esac
+
+    if [ "$compare_across_models" = 1 ]; then
+        local models_to_compare
+        read -p "Enter the models to compare (comma-separated): " models_to_compare
+
+        local input
+        read -p "Enter the input to use in comparing models: " input
+    fi
+
+
 }
 
 main

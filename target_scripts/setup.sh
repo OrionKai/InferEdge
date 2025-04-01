@@ -6,17 +6,7 @@ export USERNAME=${SUDO_USER:-$(whoami)}
 export SUITE_PATH="/home/$USERNAME/Desktop/CS4099Suite"
 
 function main() {
-    # Check if user passed in an optional argument specifying the target machine
-    # is on a Mac
-    while getopts "m" opt; do
-        case $opt in
-            m) mac=1 ;;
-            \?) echo "Invalid option: -$OPTARG" >&2
-                exit 1 ;;
-        esac
-    done
-
-    if [ "$(uname -m)" == "aarch64" ]; then
+    if [ "$(uname -m)" = "aarch64" ]; then
         arch="arm64"
     else
         arch="amd64"
@@ -41,7 +31,7 @@ function main() {
 
     # Setup LD_LIBRARY_PATH in preparation for AoT compilation
     export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$SUITE_PATH/libtorch/lib
-    if [ "$mac" == 1 ]; then
+    if [ "$mac" = 1 ]; then
         aot_compile_wasm_mac
     else
         aot_compile_wasm_non_mac
@@ -58,7 +48,6 @@ function setup_wasmedge() {
     # Add wasmedge to the PATH for the remainder of this script
     # since it will be used in various parts
     export PATH=${PATH}:/home/$USERNAME/.wasmedge/bin
-
 
     # Create symbolic links in case they were not uploaded 
     ln -s "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0" "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so"
@@ -86,7 +75,7 @@ function setup_docker() {
             echo "1. Yes"
             echo "2. No"
         read -p "Enter the number identifying your choice: " choice
-        if [ "$choice" == "1" ]; then
+        if [ "$choice" = "1" ]; then
             chmod u+x "$SUITE_PATH/docker/install-docker.sh"
             "$SUITE_PATH"/docker/install-docker.sh
         else
@@ -117,7 +106,7 @@ function setup_python() {
             echo "1. Yes"
             echo "2. No"
         read -p "Enter the number identifying your choice: " choice
-        if [ "$choice" == "1" ]; then
+        if [ "$choice" = "1" ]; then
             apt install -y python3 python3-venv python3-pip
         else
             echo "Please install Python3 manually and re-run this script."
@@ -143,5 +132,15 @@ function aot_compile_wasm_mac() {
     # AoT compile the WebAssembly code (if on Mac)
     wasmedge compile "$SUITE_PATH/wasm/interpreted.wasm" "$SUITE_PATH/wasm/aot.so"
 }
+
+# Check if user passed in an optional argument specifying the target machine
+# is on a Mac
+while getopts "m" opt; do
+    case $opt in
+        m) mac=1 ;;
+        \?) echo "Invalid option: -$OPTARG" >&2
+            exit 1 ;;
+    esac
+done
 
 main
