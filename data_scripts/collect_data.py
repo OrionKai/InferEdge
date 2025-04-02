@@ -91,17 +91,17 @@ TIME_METRICS = [("Elapsed (wall clock) time", "wall-time-seconds")]
 PROMETHEUS_URL="http://localhost:9090"
 
 # The suffixes of the filenames to store results in
-PERF_RESULTS_FILENAME_SUFFIX = "_perf_results.csv"
-TIME_RESULTS_FILENAME_SUFFIX = "_time_results.csv"
+PERF_RESULTS_FILENAME_SUFFIX = "-perf_results.csv"
+TIME_RESULTS_FILENAME_SUFFIX = "-time_results.csv"
 
 # Basic field names to include in every CSV file storing experiment results
 CSV_BASIC_FIELD_NAMES = ["deployment-mechanism", "trial-number", "start-time"] 
 
 # Field names for memory metrics
-MEMORY_FIELD_NAMES = ["avg-memory-over-time-sampled", "max-memory-over-time-sampled", "max-memory-over-time"]
+MEMORY_FIELD_NAMES = ["avg-memory-over-time-in-bytes", "max-memory-over-time-in-bytes"]
 
 # Field names for CPU metrics
-CPU_FIELD_NAMES = ["cpu-total-utilization", "cpu-user-utilization", "cpu-system-utilization"]
+CPU_FIELD_NAMES = ["CPU-total-utilization-percentage", "CPU-user-utilization-percentage", "CPU-system-utilization-percentage"]
 
 # Field names for events that might be missing/not available for cAdvisor and Prometheus
 # depending on the system
@@ -131,7 +131,6 @@ DAEMON_ID = "/system.slice/docker.service"
 PROMETHEUS_PERF_AND_MEMORY_QUERIES = [
     "sum by (event) (container_perf_events_total{{id='{name_or_id}'}})",
     "avg_over_time(container_memory_usage_bytes{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})",
-    "max_over_time(container_memory_usage_bytes{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})",
     "container_memory_max_usage_bytes{{id='{name_or_id}'}}",
     "100 * rate(container_cpu_usage_seconds_total{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})" + f" / {NUM_CORES}",
     "100 * rate(container_cpu_user_seconds_total{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f})" + f" / {NUM_CORES}",
@@ -747,7 +746,7 @@ def main():
     # The command to execute for the native deployment mechanism
     native_cmd = f"{NATIVE_BINARY_PATH} {model_path} {input_path}"
 
-    results_filename_prefix = f"{model}_{input_file}"
+    results_filename_prefix = f"{model}-{input_file}"
     results_filename_prefix = results_filename_prefix.replace(".", "_")
 
     results_filename_prefix_with_path = os.path.join(RESULTS_DIR, set_name, results_filename_prefix)

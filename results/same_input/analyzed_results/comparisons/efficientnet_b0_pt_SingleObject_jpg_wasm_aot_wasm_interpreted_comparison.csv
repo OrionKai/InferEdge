@@ -1,0 +1,2 @@
+metric,wasm_aot-value,wasm_interpreted-value,statistically-significant,effect-size
+wall-time-seconds,7.048870184371458-7.37212981562854,268.0291427247682-268.2268572752319,True,37.16x-37.21x

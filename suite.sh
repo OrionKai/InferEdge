@@ -576,20 +576,22 @@ function retrieve_data_collection_results() {
 }
 
 function run_data_analysis() {
+    install_python_and_dependencies
+
     echo "Analyzing results of experiments..."
 
     local set_name
     read -p "Enter the name of the set of experiments to analyze: " set_name
 
-    run_per_experiment_data_analysis set_name
+    run_per_experiment_data_analysis $set_name
 
-    echo "Would you like to perform aggregate analysis on the overall results of the entire set of experiments?"
+    echo "Would you like to perform aggregate analysis on the entire set of experiments, using the results of the previous analyses?"
         echo "1. Yes"
         echo "2. No"
     local aggregate_analysis_input
     read -p "Enter the number identifying your choice: " aggregate_analysis_input
     case $aggregate_analysis_input in
-        1) run_aggregate_data_analysis set_name ;;
+        1) run_aggregate_data_analysis $set_name ;;
         2) echo "Exiting..." ;;
         *) echo "Invalid option." ;;
     esac
@@ -604,6 +606,7 @@ function run_per_experiment_data_analysis() {
         significance_level=0.05
     fi
 
+    options=""
     local view_output
     echo "Would you like to view the output for each experiment? If you answer 'no', you can still choose to save the outputs to files."
         echo "1. Yes"
@@ -611,8 +614,8 @@ function run_per_experiment_data_analysis() {
     local view_output_input
     read -p "Enter the number identifying your choice: " view_output_input
     case $view_output_input in
-        1) view_output=1 ;;
-        2) view_output=0 ;;
+        1) options="$options --view-output" ;;
+        2) ;;
         *) echo "Invalid option." ;;
     esac 
 
@@ -623,13 +626,13 @@ function run_per_experiment_data_analysis() {
     local save_output_input
     read -p "Enter the number identifying your choice: " save_output_input
     case $save_output_input in
-        1) save_output=1 ;;
-        2) save_output=0 ;;
+        1) options="$options --save-output" ;;
+        2) ;;
         *) echo "Invalid option." ;;
     esac
 
     prompt_user_for_mechanisms
-    prompt_user_for_metrics set_name
+    prompt_user_for_metrics $set_name
 
     echo "Which view of the Docker deployment mechanism's overhead would you like to use?"
         echo "1. Include only the Docker container's overhead"
@@ -638,25 +641,53 @@ function run_per_experiment_data_analysis() {
     local docker_overhead_input
     read -p "Enter the number identifying your choice: " docker_overhead_input
     case $docker_overhead_input in
-        1) docker_overhead=1 ;;
-        2) docker_overhead=2 ;;
-        3) docker_overhead=3 ;;
+        1) docker_overhead=0 ;;
+        2) docker_overhead=1 ;;
+        3) docker_overhead=2 ;;
         *) echo "Invalid option." ;;
     esac
 
-    local include_insig_output
-    echo "Would you like to print statistically insignificant output during the analysis?"
-        echo "1. Yes"
-        echo "2. No"
-    local include_insig_output_input
-    read -p "Enter the number identifying your choice: " include_insig_output_input
-    case $include_insig_output_input in
-        1) include_insig_output=1 ;;
-        2) include_insig_output=0 ;;
-        *) echo "Invalid option." ;;
-    esac
-
-    host_scripts/analyze_data.sh results/$set_name false
+    if [ "$view_output_input" = 1 ]; then
+        local include_insig_output
+        echo "Would you like to print statistically insignificant output during the analysis?"
+            echo "1. Yes"
+            echo "2. No"
+        local include_insig_output_input
+        read -p "Enter the number identifying your choice: " include_insig_output_input
+        case $include_insig_output_input in
+            1) options="$options --include_insignificant_output" ;;
+            2) ;;
+            *) echo "Invalid option." ;;
+        esac
+    fi
+    
+    # For each combination of model and input, there's a perf results file and a time results file
+    # so only need to iterate over one of them
+    for results_file in $(ls results/$set_name/*time_results.csv); do
+        model=$(basename "$results_file" | cut -d '-' -f 1)
+        input=$(basename "$results_file" | cut -d '-' -f 2)
+        echo "Analyzing data for $model and $input..."
+        echo data_scripts/analyze_data.py \
+            --experiment-set "$set_name" \
+            --model "$model" \
+            --input "$input" \
+            --significance-level "$significance_level" \
+            --docker-overhead-view "$docker_overhead" \
+            --mechanisms "$mechanisms" \
+            --metrics "$metrics" \
+            $options 
+        python3 data_scripts/analyze_data.py \
+            --experiment-set "$set_name" \
+            --model "$model" \
+            --input "$input" \
+            --significance-level "$significance_level" \
+            --docker-overhead-view "$docker_overhead" \
+            --mechanisms "$mechanisms" \
+            --metrics "$metrics" \
+            $options 
+        echo "Analysis complete. Press Enter to continue to the next experiment..."
+        read -r
+    done
 }
 
 function prompt_user_for_metrics() {
@@ -669,8 +700,10 @@ function prompt_user_for_metrics() {
 
         # The first 3 columns are the same for all result files; they only include non-metric columns
         # such as deployment mechanism, trial number and start time
-        time_metrics=$(head -n 1 "$time_file" | cut -d ',' -f 4-)
-        perf_metrics=$(head -n 1 "$perf_file" | cut -d ',' -f 4-)
+        time_metrics=$(head -n 1 "$time_file" | tr -d '\r' | cut -d ',' -f 4-)
+        perf_metrics=$(head -n 1 "$perf_file" | tr -d '\r' | cut -d ',' -f 4-)
+
+        echo "time metrics: $time_metrics"
 
         echo "$time_metrics,$perf_metrics"
     read -p "Enter the metrics you would like to analyze (comma-separated). If nothing is entered, all metrics will be used: " metrics
@@ -679,17 +712,48 @@ function prompt_user_for_metrics() {
     fi
 }
 
+function list_models_and_inputs() {
+    set_name=$1
+
+    echo "Based on the data collected, the following models and inputs are available for analysis:"
+        # Read the aggregate results file's unique values for the first and second columns, which
+        # correspond to the model and input respectively
+        models=$(cut -d ',' -f 1 results/$set_name/analyzed_results/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)        
+        inputs=$(cut -d ',' -f 2 results/$set_name/analyzed_results/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)
+
+        echo "models: $models"
+        echo "inputs: $inputs"
+}
+
 function run_aggregate_data_analysis() {
     set_name=$1
 
-    # parser.add_argument("--experiment-set", type=str, required=True, help="The experiment set to analyze.")
-    # parser.add_argument("--compare-across-models", action="store_true", help="Compare across models.")
-    # parser.add_argument("--models-to-compare", type=str, nargs="+", help="The models to compare.")
-    # parser.add_argument("--input", type=str, help="The single input to use in comparing models.")
-    # parser.add_argument("--compare-across-inputs", action="store_true", help="Compare across inputs.")
-    # parser.add_argument("--inputs-to-compare", type=str, nargs="+", help="The inputs to compare.")
-    # parser.add_argument("--model", type=str, help="The model to use in comparing inputs.")
-    # parser.add_argument("--metrics", type=str, nargs="+", default=["wall-time-seconds"], help="The metrics to analyze.")
+    prompt_user_for_metrics $set_name
+
+    local options=""
+    local view_output
+    echo "Would you like to view all of the plots that will be produced? If you answer 'no', you can still choose to save the outputs to files."
+        echo "1. Yes"
+        echo "2. No"
+    local view_output_input
+    read -p "Enter the number identifying your choice: " view_output_input
+    case $view_output_input in
+        1) options="$options --view-output" ;;
+        2) ;;
+        *) echo "Invalid option." ;;
+    esac 
+
+    local save_output
+    echo "Would you like to save all of the plots to files?"
+        echo "1. Yes"
+        echo "2. No"
+    local save_output_input
+    read -p "Enter the number identifying your choice: " save_output_input
+    case $save_output_input in
+        1) options="$options --save-output" ;;
+        2) ;;
+        *) echo "Invalid option." ;;
+    esac
 
     echo "Would you like to compare across models?"
         echo "1. Yes"
@@ -702,17 +766,39 @@ function run_aggregate_data_analysis() {
         *) echo "Invalid option." ;;
     esac
 
+    list_models_and_inputs $set_name
     if [ "$compare_across_models" = 1 ]; then
-        local models_to_compare
         read -p "Enter the models to compare (comma-separated): " models_to_compare
-
-        local input
         read -p "Enter the input to use in comparing models: " input
+        options="$options --compare-across-models --models-to-compare $models_to_compare --input $input"
     fi
 
+    echo "Would you like to compare across inputs?"
+        echo "1. Yes"
+        echo "2. No"
+    local compare_across_inputs_input
+    read -p "Enter the number identifying your choice: " compare_across_inputs_input
+    case $compare_across_inputs_input in
+        1) compare_across_inputs=1 ;;
+        2) compare_across_inputs=0 ;;
+        *) echo "Invalid option." ;;
+    esac
 
+    if [ "$compare_across_inputs" = 1 ]; then
+        read -p "Enter the inputs to compare (comma-separated): " inputs_to_compare
+        read -p "Enter the model to use in comparing inputs: " model
+        options="$options --compare-across-inputs --inputs-to-compare $inputs_to_compare --model $model"
+    fi
+
+    echo data_scripts/analyze_aggregate_data.py \
+        --experiment-set "$set_name" \
+        --metrics "$metrics" \
+        $options
+
+    python3 data_scripts/analyze_aggregate_data.py \
+        --experiment-set "$set_name" \
+        --metrics "$metrics" \
+        $options
 }
 
 main
-
-python3 data_scripts/analyze_data.py --perf_results results/s2w5results/2025-03-09T19\:36\:39.811039mobilenet.ptinput.jpgperf_results.csv --time_results results/s2w5results/2025-03-09T19\:36\:39.811039mobilenet.ptinput.jpgtime_results.csv 
