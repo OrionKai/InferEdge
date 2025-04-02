@@ -285,8 +285,8 @@ def main():
     input = args.input
     model_with_underscores = model.replace(".", "_")
     input_with_underscores = input.replace(".", "_")
-    deployment_mechanisms = [mechanism.strip().lower() for mechanism in args.mechanisms.split(",")]
-    metrics = [metric.strip().lower() for metric in args.metrics.split(",")]
+    deployment_mechanisms = [mechanism.strip() for mechanism in args.mechanisms.split(",")]
+    metrics = [metric.strip() for metric in args.metrics.split(",")]
 
     perf_filename = f"{model_with_underscores}-{input_with_underscores}-perf_results.csv"
     time_filename = f"{model_with_underscores}-{input_with_underscores}-time_results.csv"

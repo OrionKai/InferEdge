@@ -9,4 +9,3 @@ wasmedge/*
 wasm/*
 docker/*.tar
 native/*
-*.png

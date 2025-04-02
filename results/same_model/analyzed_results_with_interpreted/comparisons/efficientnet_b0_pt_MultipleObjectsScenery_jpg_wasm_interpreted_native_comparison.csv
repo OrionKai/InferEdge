@@ -1,0 +1,2 @@
+metric,wasm_interpreted-value,native-value,statistically-significant,effect-size
+wall-time-seconds,59.74250452768693-60.008495472313086,6.0557587941430615-6.330241205856938,True,9.64x-9.70x

@@ -1,0 +1,2 @@
+metric,wasm_interpreted-value,docker-value,statistically-significant,effect-size
+wall-time-seconds,59.74250452768693-60.008495472313086,7.500983807248359-7.996016192751641,True,7.69x-7.76x

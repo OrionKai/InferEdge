@@ -1,0 +1,2 @@
+metric,native-value,docker-value,statistically-significant,effect-size
+wall-time-seconds,6.441940667061083-6.734059332938919,7.867082432678857-8.293917567321145,True,1.19x-1.26x

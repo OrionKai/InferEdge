@@ -755,6 +755,8 @@ function run_aggregate_data_analysis() {
         *) echo "Invalid option." ;;
     esac
 
+    list_models_and_inputs $set_name
+
     echo "Would you like to compare across models?"
         echo "1. Yes"
         echo "2. No"
@@ -766,7 +768,6 @@ function run_aggregate_data_analysis() {
         *) echo "Invalid option." ;;
     esac
 
-    list_models_and_inputs $set_name
     if [ "$compare_across_models" = 1 ]; then
         read -p "Enter the models to compare (comma-separated): " models_to_compare
         read -p "Enter the input to use in comparing models: " input

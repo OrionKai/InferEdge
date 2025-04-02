@@ -26,19 +26,18 @@ AGGREGATE_CSV_FILENAME = "aggregate_results.csv"
 def chart_compare_across_models_or_inputs(aggregate_df, metrics, across_models, variable_values, constant_value, 
     view_output, save_output, plots_path):
     deployment_mechanisms = aggregate_df["deployment-mechanism"].unique()
-    display(aggregate_df)
-    print(deployment_mechanisms)
+    variable_values_str = "_".join(variable_values)
 
     if across_models:            
         # If comparing across models, then models represent the variable, while the input represents a constant
         variable = "model"
         constant = "input"
-        plot_filename_prefix = f"aggregate_models_{variable_values}_for_input_{constant_value}"
+        plot_filename_prefix = f"aggregate_models_{variable_values_str}_for_input_{constant_value}"
     else:
         # Otherwise, it is the other way around
         variable = "input"
         constant = "model"
-        plot_filename_prefix = f"aggregate_models_{variable_values}_for_model_{constant_value}"
+        plot_filename_prefix = f"aggregate_models_{variable_values_str}_for_model_{constant_value}"
 
     for metric in metrics:
         # Ensure this metric is in this dataframe (since some metrics are only for the perf dataframes,
@@ -65,8 +64,12 @@ def chart_compare_across_models_or_inputs(aggregate_df, metrics, across_models, 
             plt.xlabel(variable)
             plt.legend()
 
+            # Rotate the x-axis labels for better readability
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+
             if save_output:
-                plot_filename = f"{plot_filename_prefix}_{metric_with_underscores}_bar_chart.png"
+                plot_filename = f"{plot_filename_prefix}_{metric_with_underscores}_lineplot.png"
                 plot_filepath = os.path.join(plots_path, plot_filename)
                 plt.savefig(plot_filepath)
 
@@ -100,7 +103,9 @@ def compare_across_inputs(aggregate_df, inputs_to_compare, model, metrics, view_
 
 def remove_irrelevant_df_columns(df, metric_cols):
     # Remove the columns that are not required
+    print(metric_cols)
     cols_to_keep = [col for col in NON_METRIC_COLUMNS + metric_cols if col in df.columns]
+    print(cols_to_keep)
     return df[cols_to_keep]
 
 def main():
@@ -119,7 +124,7 @@ def main():
 
     args = parser.parse_args()
 
-    metrics = [metric.strip().lower() for metric in args.metrics.split(",")]
+    metrics = [metric.strip() for metric in args.metrics.split(",")]
 
     # Load the aggregate results
     experiments_set_path = os.path.join(RESULTS_DIR, args.experiment_set)
@@ -129,7 +134,7 @@ def main():
 
     # Get the names of the columns corresponding to the provided metrics
     metric_cols_suffixes = ["-mean", "-error-lower", "-error-upper"]
-    metric_cols = [f"{metric}{suffix}" for metric in args.metrics for suffix in metric_cols_suffixes]
+    metric_cols = [f"{metric}{suffix}" for metric in metrics for suffix in metric_cols_suffixes]
 
     # Remove irrelevant columns from the dataframe
     aggregate_df = remove_irrelevant_df_columns(aggregate_df, metric_cols)
@@ -142,7 +147,7 @@ def main():
             print("You must provide a list of models to compare.")
         if args.input is None:
             print("You must provide a single input to use in comparing models.")
-        models_to_compare = [model.strip().lower() for model in args.models_to_compare.split(",")]
+        models_to_compare = [model.strip() for model in args.models_to_compare.split(",")]
         compare_across_models(aggregate_df, models_to_compare, args.input, metrics, args.view_output, args.save_output,
             plots_path)
     if args.compare_across_inputs:
@@ -150,7 +155,7 @@ def main():
             print("You must provide a list of inputs to compare.")
         if args.model is None:
             print("You must provide a single model to use in comparing inputs.")
-        inputs_to_compare = [input.strip().lower() for input in args.inputs_to_compare.split(",")]
+        inputs_to_compare = [input.strip() for input in args.inputs_to_compare.split(",")]
         compare_across_inputs(aggregate_df, inputs_to_compare, args.model, metrics, args.view_output, args.save_output,
             plots_path)
 
