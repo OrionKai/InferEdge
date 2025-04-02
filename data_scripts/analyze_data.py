@@ -234,7 +234,7 @@ def plot_metrics_bar_chart(aggregate_df, metrics, view_output, save_output, plot
         plt.bar(deployment_mechanisms, means, yerr=errors, capsize=5)
 
         # Set title and labels
-        plt.title(f"{metric_name_without_hyphen} by deployment mechanism")
+        plt.title(f"{metric_name_without_hyphen} by deployment mechanism\nfor model {model_with_underscores} and input {input_with_underscores}") 
         plt.ylabel(metric_name_without_hyphen)
         plt.xlabel("deployment mechanism")
 
@@ -283,8 +283,8 @@ def main():
     # in determining the result filename, to avoid issues with file paths
     model = args.model
     input = args.input
-    model_with_underscores = model.replace(".", "_")
-    input_with_underscores = input.replace(".", "_")
+    model_with_underscores = model
+    input_with_underscores = input
     deployment_mechanisms = [mechanism.strip() for mechanism in args.mechanisms.split(",")]
     metrics = [metric.strip() for metric in args.metrics.split(",")]
 
