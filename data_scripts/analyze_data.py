@@ -7,6 +7,7 @@ from itertools import combinations
 import matplotlib.pyplot as plt
 import argparse
 import os
+import csv
 
 # String representing the default value for the --metrics argument
 DEFAULT_METRICS = "instructions,cpu-cycles,cache-references,cache-misses,page-faults,bus-cycles," \
@@ -143,8 +144,8 @@ def analyze_data_significant_difference(df, significance_level, metrics, model, 
             # Add a new row to the comparison dataframe for this metric
             comparison_df.loc[len(comparison_df)] = {
                 "metric": metric,
-                f"{deployment_mechanism_x}-value": f"{x_ci[0]}-{x_ci[1]}",
-                f"{deployment_mechanism_y}-value": f"{y_ci[0]}-{y_ci[1]}",
+                f"{deployment_mechanism_x}-value": f"{x_ci[0]:,.2f}-{x_ci[1]:,.2f}",
+                f"{deployment_mechanism_y}-value": f"{y_ci[0]:,.2f}-{y_ci[1]:,.2f}",
                 "statistically-significant": statistically_significant,
                 "effect-size": f"{ratio_min:.2f}x-{ratio_max:.2f}x"
             }
@@ -168,9 +169,16 @@ def analyze_data_significant_difference(df, significance_level, metrics, model, 
             # Save the comparison dataframe to a CSV file
             comparison_csv_filename = f"{model_with_underscores}_{input_with_underscores}_{deployment_mechanism_x}_{deployment_mechanism_y}_comparison.csv"
             comparison_csv_path = os.path.join(analyzed_results_path, comparison_csv_filename)
-            comparison_df.to_csv(comparison_csv_path, index=False)
+
+            # Enclose everything in quotes, since otherwise importing them into e.g. Excel will
+            # not work properly
+            comparison_df.to_csv(comparison_csv_path, index=False, quoting=csv.QUOTE_ALL)
         
     return aggregate_df
+
+def add_thousand_separator(number):
+    # Add a thousand separator to the number
+    return f"{number:,}"
 
 def print_if_true(message, condition):
     if condition:
@@ -213,6 +221,9 @@ def parse_csv_rows(results_filename, deployment_mechanisms, metrics, docker_over
 
     # Drop rows corresponding to deployment mechanisms that were not specified
     df = df.drop(df[~df["deployment-mechanism"].isin(deployment_mechanisms)].index)
+
+    # Remove the start time column since it is not relevant for the analysis
+    df = df.drop(columns=["start-time"])
 
     return df
 
@@ -308,27 +319,24 @@ def main():
     time_path = os.path.join(experiments_set_path, time_filename)
 
     perf_df = parse_csv_rows(perf_path, deployment_mechanisms, metrics, args.docker_overhead_view)
-    perf_metrics = get_metrics_in_df(perf_df)
-    perf_aggregate_df = analyze_data_significant_difference(perf_df, args.significance_level, perf_metrics, model, 
-        model_with_underscores, input, input_with_underscores, comparisons_path, args.include_insignificant_output,
-        args.view_output, args.save_output)
     time_df = parse_csv_rows(time_path, deployment_mechanisms, metrics, args.docker_overhead_view, is_perf_file=False)
-    time_metrics = get_metrics_in_df(time_df)
-    time_aggregate_df = analyze_data_significant_difference(time_df, args.significance_level, time_metrics, model, 
+    
+    # Note that merging the dataframes in this way might suggest that trial number 1 of the
+    # perf experiments corresponds to trial number 1 of the time experiments; this is not
+    # actually true, but it is not important since trial number is not relevant for the analysis,
+    # and doing this would produce the exact same results as if we had called the analyze_data_significant_difference
+    # function on the two dataframes separately
+    df = pd.merge(perf_df, time_df, on=["deployment-mechanism", "trial-number"])
+    metrics = get_metrics_in_df(df)
+    aggregate_df = analyze_data_significant_difference(df, args.significance_level, metrics, model,
         model_with_underscores, input, input_with_underscores, comparisons_path, args.include_insignificant_output,
         args.view_output, args.save_output)
-    metrics = perf_metrics + time_metrics
-
-    # Combine the dataframes
-    aggregate_df = pd.merge(perf_aggregate_df, time_aggregate_df, on=["model", "input", "deployment-mechanism"])
     aggregate_csv_filepath = os.path.join(analyzed_results_path, AGGREGATE_CSV_FILENAME)
     create_or_update_aggregate_csv(aggregate_df, aggregate_csv_filepath)
     
     if args.view_output or args.save_output:
         plot_metrics_bar_chart(aggregate_df, metrics, args.view_output, args.save_output, plots_path,
             model_with_underscores, input_with_underscores)
-    
-    
 
 if __name__ == "__main__":
     main()
