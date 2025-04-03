@@ -1,3 +1,4 @@
+"""This module downloads and converts selected MobileNetV3 model variants to Torchscript format."""
 import os
 import torch
 from torch import jit
@@ -27,9 +28,9 @@ def generate_mobilenet_models(mobilenet_variants, mobilenet_variants_suffixes):
     # Create a dummy input
     fake_input = torch.rand(1, 3, 224, 224)
 
-    for idx, model_fn in enumerate(mobilenet_variants):
+    for mobilenet_variant, mobilenet_variant_suffix in zip(mobilenet_variants, mobilenet_variants_suffixes):
         # Load the pretrained model
-        model = model_fn(pretrained=True)
+        model = mobilenet_variant(pretrained=True)
         model.eval()
         
         # Convert the model into a TorchScript module using tracing,
@@ -40,7 +41,7 @@ def generate_mobilenet_models(mobilenet_variants, mobilenet_variants_suffixes):
         frozen_model = torch.jit.freeze(traced_model)
         
         # Save the frozen model
-        filename = f"mobilenetv3_{mobilenet_variants_suffixes[idx]}.pt"
+        filename = f"mobilenetv3_{mobilenet_variant_suffix}.pt"
         frozen_model.save(filename)
 
 if __name__ == "__main__":

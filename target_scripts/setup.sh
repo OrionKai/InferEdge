@@ -39,24 +39,31 @@ function main() {
 }
 
 function install_time() {
+    # Install the GNU time command used by the data collection script
     apt-get install -y time
 }
 
 function setup_wasmedge() {
+    # Grant execute permissions to the WasmEdge binary and sets up appropriate paths and links
     chmod u+x "/home/$USERNAME/.wasmedge/bin/wasmedge"
 
     # Add wasmedge to the PATH for the remainder of this script
     # since it will be used in various parts
     export PATH=${PATH}:/home/$USERNAME/.wasmedge/bin
 
-    # Create symbolic links in case they were not uploaded 
-    ln -s "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0" "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so"
-    ln -s "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0" "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0"
+    # Create symbolic links expected by WasmEdge in case they are missing
+    if [ ! -L "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so" ]; then
+        ln -s "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0" "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so"
+    fi
+
+    if [ ! -L "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0" ]; then
+        ln -s "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0" "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0"
+    fi
 }
 
 function enable_memory_controller() {
-    # This function is sometimes required if the memory controller is not enabled
-    # by default, for cgroup v2 devices
+    # Enable the memory controller for cgroup v2 devices so that memory usage metrics
+    # can be collected
     local cmdline_file="/boot/firmware/cmdline.txt"
     local cgroup_enable_param="cgroup_enable=memory"
     local current_cmdline_contents="$(cat "$cmdline_file")"
@@ -70,6 +77,7 @@ function enable_memory_controller() {
 }
 
 function setup_docker() {
+    # Check if Docker is installed, if not, provide the option to install it
     if ! command -v docker &> /dev/null; then
         echo "Docker is not installed. Would you like to install Docker through the script?"
             echo "1. Yes"
@@ -86,20 +94,23 @@ function setup_docker() {
 }
 
 function load_docker_image() {
+    # Load the Docker image for the image classification model
     docker load -i "$SUITE_PATH/docker/image-classification-$arch.tar"
 }
 
 function setup_cadvisor() {
+    # Grant execute permissions to the cAdvisor binary and install required packages
     chmod u+x "$SUITE_PATH/cadvisor/cadvisor"
     apt install libpfm4 linux-perf
 }
 
 function setup_prometheus() {
+    # Grant execute permissions to the Prometheus binary
     chmod u+x "$SUITE_PATH/prometheus/prometheus"
 }
 
 function setup_python() {
-    # Check if Python is installed, if not, install it
+    # Check if Python is installed, if not, provide the option to install it
     if ! command -v python3 &> /dev/null
     then
         echo "Python3 is not installed. Would you like to install Python3 through the script?"
@@ -114,12 +125,16 @@ function setup_python() {
         fi
     fi
 
+    # Install cgroup tools to allow management of custom cgroups for data collection
     apt install -y cgroup-tools
+
+    # Create a Python virtual environment and install packages required by the data collection script
     python3 -m venv "$SUITE_PATH/myenv" 
     source "$SUITE_PATH/myenv/bin/activate" && pip install -r "$SUITE_PATH/python/target/requirements.txt"
 }
 
 function setup_collect_data() {
+    # Grant execute permissions to the collect_data.sh script
     chmod u+x "$SUITE_PATH/target_scripts/collect_data.sh"
 }
 

@@ -24,19 +24,26 @@ function main() {
     set_name=$2
     mechanisms=$3
 
-    cd $SUITE_PATH
-    mkdir -p results/$set_name
+    # Create the results directory 
+    cd "$SUITE_PATH"
+    mkdir -p "results/$set_name"
+
+    # Activate the Python environment with the necessary dependencies to run the data 
+    # collection script
     source myenv/bin/activate
 
-    run_data_collection $trials
+    run_data_collection
 }
 
 function run_data_collection() {
-    # Iterate over each model file in the models folder and each input file in the inputs folder
+    # Iterate over each model file in the models folder and each input file in the inputs folder,
+    # and run the collect_data.py script on them with the specified options
     for model in models/*; do
         for input in inputs/*; do
             if [ -f "$model" ] && [ -f "$input" ]; then
-                echo "Running collect_data.py with $(basename "$model") and $(basename "$input")"
+                basename_model=$(basename "$model")
+                basename_input=$(basename "$input")
+                echo "Running collect_data.py with model: $basename_model and input: $basename_input"
 
                 options=""
                 if [ "$is_mac" = 1 ]; then
@@ -46,15 +53,9 @@ function run_data_collection() {
                     options="$options --allow_missing_metrics"
                 fi
 
-                if [ "$allow_missing_metrics" = 1 ]; then
-                    python collect_data.py --model "$(basename "$model")" --input "$(basename "$input")" \
-                        --trials $trials --set_name $set_name --mechanisms "$mechanisms" \
-                        --arch $arch --allow_missing_metrics
-                else
-                    python collect_data.py --model "$(basename "$model")" --input "$(basename "$input")" \
-                        --trials $trials --set_name $set_name --mechanisms "$mechanisms" \
-                        --arch $arch
-                fi
+                python collect_data.py --model "$basename_model" --input "$basename_input" \
+                    --trials $trials --set_name $set_name --mechanisms "$mechanisms" \
+                    --arch $arch $options
             fi
         done
     done
@@ -76,7 +77,7 @@ while getopts "am" opt; do
     esac
 done
 
-# Remove the processed options
+# Remove the processed optional arguments
 shift $((OPTIND - 1))
 
 main $1 $2 $3

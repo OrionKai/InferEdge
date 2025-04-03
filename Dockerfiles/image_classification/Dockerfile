@@ -12,15 +12,11 @@ COPY rust/native/ /
 # Install necessary packages
 RUN apt-get update && \
     apt-get install -y \
-        curl \
-        unzip \
         ca-certificates \
         libgomp1 \
         binutils \
         cmake \
-        git \
-        build-essential \
-        python3-pip && \
+        build-essential && \
     if [ "$TARGETARCH" = "arm64" ]; then \
          apt-get install -y \
              binutils-aarch64-linux-gnu \
@@ -30,6 +26,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     ldconfig
 
+# Compile the Rust code to a native binary
 RUN case "$TARGETARCH" in \
     "amd64") \
         export RUST_TARGET="x86_64-unknown-linux-gnu" ;; \
@@ -54,10 +51,8 @@ ARG APP_NAME="torch_image_classification"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Install necessary packages
 RUN apt-get update && apt-get install -y \
-    time \
-    curl \
-    unzip \
     ca-certificates \
     libgomp1 \
     binutils \
