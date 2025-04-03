@@ -1,5 +1,7 @@
 #!/bin/bash
-# Global variables
+# This is the main script of the suite, providing functionality to automate the performance characterization
+# of edge ML inference.
+
 export PYTORCH_VERSION="1.7.1"
 export PYTHON_VERSION="cp39"
 export PYTORCH_ABI="libtorch-cxx11-abi"
@@ -11,12 +13,14 @@ function main() {
 }
 
 function prompt_user_for_target_details_if_not_set() {
+    # Prompt the user for the login details of the target machine if they are not set
     if [ -z "$target_address" ] || [ -z "$target_username" ] || [ -z "$target_password" ]; then
         prompt_user_for_target_details
     fi
 }
 
 function prompt_user_for_target_details() {
+    # Prompt the user for the login details of the target machine
     read -p "Enter the target machine's address: " target_address
     read -p "Enter the target machine's username: " target_username
     read -s -p "Enter the target machine's password: " target_password
@@ -24,12 +28,14 @@ function prompt_user_for_target_details() {
 }
 
 function prompt_user_for_architecture_if_not_set() {
+    # Prompt the user for the architecture of the target machine if it is not set
     if [ -z "$arch" ]; then
         prompt_user_for_architecture
     fi
 }
 
 function prompt_user_for_architecture() {
+    # Prompt the user for the architecture of the target machine
     while true; do
         echo "Which of the following architectures does the target machine use?"
             echo "1. x86_64"
@@ -48,14 +54,16 @@ function prompt_user_for_architecture() {
 }
 
 function prompt_user_for_mac_if_not_set() {
+    # Prompt the user to clarify whether the target machine is a Mac if this has not been set
     if [ -z "$is_mac" ]; then
         prompt_user_for_mac
     fi
 }
 
 function prompt_user_for_mac() {
+    # Prompt the user to clarify whether the target machine is a Mac
     while true; do
-        echo "Is the target machine a Mac?"
+        echo "Is the target machine a Mac? Answer 'yes' if you are running a VM on a Mac as well."
             echo "1. Yes"
             echo "2. No"
         local is_mac_input
@@ -69,17 +77,18 @@ function prompt_user_for_mac() {
 }
 
 function prompt_user_for_action() {
+    # Prompt the user for the action they would like to perform
     while true; do
         echo "What would you like to do?"
-            echo "1. Run the entire suite"
-            echo "2. Perform specific actions"
+            echo "1. Run the entire suite from start to finish"
+            echo "2. Perform specific steps"
             echo "3. Set/change target machine details"
             echo "4. Exit"
         local action
         read -p "Enter the number identifying the action you would like to perform: " action
         case $action in
             1) run_suite ;;
-            2) prompt_user_for_specific_actions ;;
+            2) prompt_user_for_specific_steps ;;
             3) prompt_user_for_target_details ;;
             4) exit 0 ;;
             *) echo "Invalid option." ;;
@@ -88,6 +97,7 @@ function prompt_user_for_action() {
 }
 
 function run_suite() {
+    # Run the entire suite
     prompt_user_for_target_details_if_not_set
     acquire_files
     transfer_files
@@ -97,7 +107,8 @@ function run_suite() {
     run_data_analysis
 }
 
-function prompt_user_for_specific_actions() {
+function prompt_user_for_specific_steps() {
+    # Prompt the user for specific actions they would like to perform
     while true; do
         echo "What would you like to do?"
             echo "1. Acquire files to transfer to target machine"
@@ -123,12 +134,13 @@ function prompt_user_for_specific_actions() {
 }
 
 function acquire_files() {
+    # Acquire the files needed for experiments to be performed on the target machine
     prompt_user_for_architecture_if_not_set
-    if [ "$arch" = "arm64" ]; then
-        setup_qemu
-    fi
+    setup_qemu_if_required
+
     install_rust
     install_python_and_dependencies # TODO: check if torchvision really required
+    
     generate_model_files
 
     case $arch in
@@ -142,12 +154,30 @@ function acquire_files() {
     compile_wasm 
 }
 
+function setup_qemu_if_required() {
+    # Setup QEMU if the host architecture is different from the target architecture
+    host_arch=$(uname -m)
+    if [ "$host_arch" = "x86_64" ]; then
+        host_arch="amd64"
+    elif [ "$host_arch" = "aarch64" ]; then
+        host_arch="arm64"
+    fi
+
+    if [ "$arch" != "$host_arch" ]; then
+        setup_qemu
+    fi
+}
+
 function setup_qemu() {
-    echo "Setting up QEMU for aarch64..."
-    docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+    # Setup QEMU for cross-compilation if it is not already set up
+    if [ ! -f /usr/bin/qemu-aarch64-static ]; then
+        echo "Setting up QEMU for cross-compilation..."
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+    fi
 }
 
 function install_rust() {
+    # Check if Rust is installed, if not, provide the option to install it
     if ! command -v rustc &> /dev/null; then
         echo "Rust is not installed. Would you like to install Rust through the script?"
             echo "1. Yes"
@@ -164,13 +194,14 @@ function install_rust() {
 }
 
 function install_python_and_dependencies() {
+    # Check if Python is installed, if not, provide the option to install it
     if ! command -v python3 &> /dev/null; then
         echo "Python3 is not installed. Would you like to install Python3 through the script?"
             echo "1. Yes"
             echo "2. No"
         read -p "Enter the number identifying your choice: " choice
         if [ "$choice" = "1" ]; then
-            if [ "$uname -m" != "Darwin" ]; then
+            if [ "$(uname -s)" != "Darwin" ]; then
                 sudo apt install python3 python3-pip python3-venv
             else 
                 # For Macs
@@ -185,11 +216,11 @@ function install_python_and_dependencies() {
     python3 -m venv myenv
     source myenv/bin/activate
 
-    # Check
     pip install -r python/host/requirements.txt
 }
 
 function generate_model_files() {
+    # Generate the model files used in the experiments
     echo "Generating model files..."
 
     mkdir -p models
@@ -197,9 +228,12 @@ function generate_model_files() {
     generate_mobilenet_model
     generate_efficientnet_models
     generate_resnet_models
+
+    echo "Finished generating model files!"
 }
 
 function generate_efficientnet_models() {
+    # Generate EfficientNet models
     echo "Which EfficientNet models would you like to generate?"
         echo "1. EfficientNetB0"
         echo "2. EfficientNetB1"
@@ -229,11 +263,14 @@ function generate_efficientnet_models() {
     done
 
     cd models
+    echo "Generating EfficientNet models..."
     python3 ../host_scripts/model_generation/gen_efficientnet_models.py "${efficientnet_models[@]}"
+    echo "Finished generating EfficientNet models!"
     cd -
 }
 
 function generate_resnet_models() {
+    # Generate ResNet models
     echo "Which ResNet models would you like to generate?"
         echo "1. ResNet18"
         echo "2. ResNet34"
@@ -257,11 +294,14 @@ function generate_resnet_models() {
     done
 
     cd models
+    echo "Generating ResNet models..."
     python3 ../host_scripts/model_generation/gen_resnet_models.py "${resnet_models[@]}"
+    echo "Finished generating ResNet models!"
     cd -
 }
 
 function generate_mobilenet_model() {
+    # Generate MobileNet models
     echo "Which MobileNet models would you like to generate?"
         echo "1. MobileNetV3-Small"
         echo "2. MobileNetV3-Large"
@@ -284,20 +324,22 @@ function generate_mobilenet_model() {
 }
 
 function acquire_files_arm64_specific() {
+    # Acquire files specific to the arm64 architecture
     download_libtorch_arm64 
     build_wasmedge "wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps" 
 }
 
 function acquire_files_amd64_specific() {
+    # Acquire files specific to the amd64 architecture
     download_libtorch_amd64
     build_wasmedge "wasmedge/wasmedge:manylinux_2_28_x86_64-plugins-deps"
 }
 
 function build_wasmedge() {
-    echo "Building WasmEdge..."
-    local image="$1"          # e.g. wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps
+    # Build WasmEdge with the PyTorch plugin
+    local image="$1" # The name of the Docker image to use for building WasmEdge
 
-    local platform="linux/$arch"
+    echo "Building WasmEdge..."
 
     # Get the WasmEdge source code
     git clone https://github.com/WasmEdge/WasmEdge.git
@@ -309,7 +351,6 @@ function build_wasmedge() {
     chmod +x build_scripts/wasmedge/inside_docker_"$arch".sh
 
     local platform="linux/$arch"
-
     local build_dir="wasmedge"
     mkdir -p "$build_dir"
 
@@ -337,34 +378,51 @@ function build_wasmedge() {
     # Clean up; again, we need to use sudo because some of the files inside this directory
     # were technically created by another user when the Docker container was run
     sudo rm -rf WasmEdge
+
+    echo "Finished building WasmEdge!"
 }
 
 function download_libtorch_arm64() {
+    # Download libtorch for arm64 architecture
     echo "Downloading libtorch..."
+
     local build_dir="libtorch"
 
     # Download and extract libtorch
     curl -s -L -o torch.whl https://download.pytorch.org/whl/cpu/torch-${PYTORCH_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-linux_aarch64.whl
-    unzip torch.whl -d torch_unzipped
+    temp_dir=$(mktemp -d)
+    unzip -q torch.whl -d "$temp_dir"
     rm -f torch.whl
-    mkdir "$build_dir"
-    mv torch_unzipped/torch/lib torch_unzipped/torch/bin torch_unzipped/torch/include \
-        torch_unzipped/torch/share "$build_dir"
-    rm -rf torch_unzipped
+
+    mkdir -p "$build_dir"
+    mv "$temp_dir"/torch/lib "$temp_dir"/torch/bin "$temp_dir"/torch/include \
+        "$temp_dir"/torch/share "$build_dir"
+    rm -rf "$temp_dir"
+
+    echo "Finished downloading libtorch!"
 }
 
 function download_libtorch_amd64() {
     echo "Downloading libtorch..."
 
+    local build_dir="libtorch"
+
     # Download and extract libtorch
     export TORCH_LINK="https://download.pytorch.org/libtorch/cpu/${PYTORCH_ABI}-shared-with-deps-${PYTORCH_VERSION}%2Bcpu.zip" && \
-    curl -s -L -o torch.zip $TORCH_LINK && \
-    unzip -q torch.zip && \
-    rm -f torch.zip 
+    curl -s -L -o torch.zip $TORCH_LINK
+    temp_dir=$(mktemp -d)
+    unzip -q torch.zip -d "$temp_dir"
+    rm -f torch.zip
+
+    mkdir -p "$build_dir" 
+    mv "$temp_dir"/libtorch/* "$build_dir"
+
+    echo "Finished downloading libtorch!"
 }
 
 function build_cadvisor() {
-    echo "Downloading cAdvisor..."
+    # Build cAdvisor for the target architecture
+    echo "Building cAdvisor..."
 
     local image_name="cadvisor-build:$arch"
     local build_dir="cadvisor"
@@ -380,10 +438,14 @@ function build_cadvisor() {
 
     # Clean up the container
     docker rm "$container_id"
+
+    echo "Finished building cAdvisor!"
 }
 
 function download_prometheus() {
+    # Download Prometheus for the target architecture
     echo "Downloading Prometheus..."
+
     local url="https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-${arch}.tar.gz"
     local output_file="prometheus.tar.gz"
     local extract_dir="prometheus-${PROMETHEUS_VERSION}.linux-${arch}"
@@ -396,9 +458,12 @@ function download_prometheus() {
 
     rm -rf "$temp_dir"
     rm "$output_file"
+
+    echo "Finished downloading Prometheus!"
 }
 
 function build_docker_and_native() {
+    # Build the Docker image and native binary for the target architecture
     echo "Building the Docker image and native binary..."
     local image_name="image-classification:$arch"
 
@@ -416,10 +481,14 @@ function build_docker_and_native() {
 
     # Clean up the container
     docker rm "$container_id"
+
+    echo "Finished building the Docker image and native binary!"
 }
 
 function compile_wasm() {
+    # Compile the WebAssembly binary for the target architecture
     echo "Compiling the WebAssembly binary..."
+
     cd rust/wasm
     rustup target add wasm32-wasip1
     cargo build --target=wasm32-wasip1 --release
@@ -428,9 +497,12 @@ function compile_wasm() {
     # Move the compiled Wasm binary to the wasm directory
     mkdir -p wasm
     mv rust/wasm/target/wasm32-wasip1/release/interpreted.wasm wasm
+
+    echo "Finished compiling the WebAssembly binary!"
 }   
 
 function transfer_files() {
+    # Transfer the files required to run the experiments to the target machine
     prompt_user_for_target_details_if_not_set
 
     # Transfer the suite files to the target machine, including 
@@ -438,14 +510,18 @@ function transfer_files() {
     # data collection Python file, and the Cadvisor and Prometheus binaries
     echo "Transferring suite files to target device..."
     transfer_suite_files
+    echo "Finished transferring suite files!"
 
     # Transfer the results of the WasmEdge build, which will be located
     # in a separate location to the rest of the suite
     echo "Transferring WasmEdge files to target device..."
     transfer_wasmedge_files
+    echo "Finished transferring WasmEdge files!"
 }   
 
 function transfer_suite_files() {
+    # Transfer the suite files to the target machine
+
     # Create a directory to store the suite files in the target machine
     sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/Desktop/$SUITE_NAME"
 
@@ -458,6 +534,8 @@ function transfer_suite_files() {
 }   
 
 function transfer_wasmedge_files() {
+    # Transfer the WasmEdge files to the target machine
+
     # Create a directory to store the WasmEdge files in the target machine
     sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/.wasmedge"
 
@@ -466,42 +544,55 @@ function transfer_wasmedge_files() {
 }
 
 function setup_target_machine() {
+    # Setup the target machine through the setup script
     prompt_user_for_target_details_if_not_set
 
     # Ask the user if they want to run the script directly, in case the target
     # machine has an Internet connection, or if they want to simply transfer it in
     # case the target machine cannot access the Internet while connected to the host
     echo "How would you like to setup the target machine? Note that running the script
-        requires that the target machine has an Internet connection."
+        requires that the target machine has an Internet connection. Also note that it
+        requires sudo permissions"
         echo "1. Run the setup script directly on the target machine from this machine"
         echo "2. Run the setup script manually on the target machine"
-    local setup_option
-    read -p "Enter the number identifying the setup option: " setup_option
-    case $setup_option in
-        1) run_setup_script ;;
-        2) transfer_setup_script ;;
-        *) echo "Invalid option." ;;
-    esac
+
+    while true; do
+        local setup_option
+        read -p "Enter the number identifying the setup option: " setup_option
+        case $setup_option in
+            1) run_setup_script_remotely; break ;;
+            2) run_setup_script_manually_prompt; break ;;
+            *) echo "Invalid option. Please try again." 
+        esac
+    done
 }
 
-function run_setup_script() {
+function run_setup_script_remotely() {
+    # Run the setup script on the target machine remotely
     prompt_user_for_mac_if_not_set
+
+    echo "Running setup script on target device..."
     
     if [ "$is_mac" = 1 ]; then
         sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh -m"
     else
         sshpass -p "$target_password" ssh -t "$target_username@$target_address" "chmod +x /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh && sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh"
     fi
+
+    echo "Finished running setup script on target device!"
 }
 
-function transfer_setup_script() {
-    echo "Please run the script on the target as follows: /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh"
-    echo "If the target is on a Mac, please run the script on the target as follows instead: /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh -m"
+function run_setup_script_manually_prompt() {
+    # Prompt the user to run the setup script manually on the target machine
+    echo "Please run the script on the target as follows: sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh"
+    echo "If the target is on a Mac, please run the script on the target as follows instead: sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh -m"
 
-    echo "You may need to disconnect the target machine's Ethernet connection to allow it to connect to the Internet"
+    echo "You may need to disconnect the target machine's Ethernet connection to allow it to connect to the Internet."
+    read -p "Press enter to continue once you have run the script on the target machine."
 }
 
 function run_data_collection() {
+    # Run the data collection script on the target machine
     prompt_user_for_target_details_if_not_set
     prompt_user_for_mac_if_not_set
 
@@ -520,13 +611,16 @@ function run_data_collection() {
     echo "Additionally, if you are running the experiments on a virtual machine, you are advised to answer 'yes' as other metrics may be unavailable."
         echo "1. Yes"
         echo "2. No"
-    local allow_missing_metrics_input
-    read -p "Enter the number identifying your choice: " allow_missing_metrics_input
-    case $allow_missing_metrics_input in
-        1) allow_missing_metrics=1 ;;
-        2) allow_missing_metrics=0 ;;
-        *) echo "Invalid option." ;;
-    esac
+
+    while true; do
+        local allow_missing_metrics_input
+        read -p "Enter the number identifying your choice: " allow_missing_metrics_input
+        case $allow_missing_metrics_input in
+            1) allow_missing_metrics=1; break ;;
+            2) allow_missing_metrics=0; break ;;
+            *) echo "Invalid option. Please try again." ;;
+        esac
+    done
 
     options=""
     if [ "$is_mac" = 1 ]; then
@@ -536,10 +630,150 @@ function run_data_collection() {
         options="$options -a"
     fi
 
-    sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $options $trials $set_name $mechanisms"
+    sshpass -p "$target_password" ssh -t "$target_username@$target_address" "/home/$target_username/Desktop/$SUITE_NAME/target_scripts/collect_data.sh $options $trials "$set_name" $mechanisms"
+
+    echo "Finished running data collection on target device!"
+}
+
+function retrieve_data_collection_results() {
+    # Retrieve the results of the data collection from the target machine
+    prompt_user_for_target_details_if_not_set
+
+    echo "Retrieving results from target device..."
+
+    local set_name
+    read -p "Enter the name of the set of experiments to retrieve results from: " set_name
+
+    sshpass -p "$target_password" scp -r "$target_username@$target_address:/home/$target_username/Desktop/$SUITE_NAME/results/$set_name" results
+    
+    echo "Finished retrieving results from target device!"
+}
+
+function run_data_analysis() {
+    # Run the data analysis scripts on the host machine
+    install_python_and_dependencies
+
+    echo "Analyzing results of experiments..."
+
+    local set_name
+    read -p "Enter the name of the set of experiments to analyze: " set_name
+
+    run_per_experiment_data_analysis "$set_name"
+
+    echo "Would you like to perform aggregate analysis on the entire set of experiments, using the results of the previous analyses?"
+        echo "1. Yes"
+        echo "2. No"
+
+    while true; do
+        local aggregate_analysis
+        read -p "Enter the number identifying your choice: " aggregate_analysis
+        case $aggregate_analysis in
+            1) run_aggregate_data_analysis "$set_name"; break ;;
+            2) break ;;
+            *) echo "Invalid option. Please try again." ;;
+        esac
+    done
+
+    echo "Finished analyzing results of experiments!"
+}
+
+function run_per_experiment_data_analysis() { 
+    # Run data analysis for each experiment in a specified set
+    set_name="$1"
+
+    local significance_level
+    read -p "Enter the significance level to be used for the analysis (if nothing is entered, the default of 0.05 will be used): " significance_level
+    if [ -z "$significance_level" ]; then
+        significance_level=0.05
+    fi
+
+    options=""
+    
+    echo "Would you like to view the output for each experiment? If you answer 'no', you can still choose to save the outputs to files."
+        echo "1. Yes"
+        echo "2. No"
+
+    while true; do
+        local view_output
+        read -p "Enter the number identifying your choice: " view_output
+        case $view_output in
+            1) options="$options --view-output"; break ;;
+            2) break ;;
+            *) echo "Invalid option. Please try again." ;;
+        esac
+    done
+
+    echo "Would you like to save the output for each experiment to a file?"
+        echo "1. Yes"
+        echo "2. No"
+
+    while true; do
+        local save_output
+        read -p "Enter the number identifying your choice: " save_output
+        case $save_output in
+            1) options="$options --save-output"; break ;;
+            2) break ;;
+            *) echo "Invalid option. Please try again." ;;
+        esac
+    done
+
+    prompt_user_for_mechanisms
+    prompt_user_for_metrics "$set_name"
+
+    echo "Which view of the Docker deployment mechanism's overhead would you like to use?"
+        echo "1. Include only the Docker container's overhead"
+        echo "2. Include the Docker container's overhead and the Docker daemon's full overhead"
+        echo "3. Include the Docker container's overhead and the Docker daemon's estimated additional overhead due to the container"
+    
+    while true; do
+        local docker_overhead_input
+        read -p "Enter the number identifying your choice: " docker_overhead_input
+        case $docker_overhead_input in
+            1) docker_overhead=0; break ;;
+            2) docker_overhead=1; break ;;
+            3) docker_overhead=2; break ;;
+            *) echo "Invalid option. Please try again." ;;
+        esac
+    done
+
+    if [ "$view_output" = 1 ]; then
+        echo "Would you like to print statistically insignificant output during the analysis?"
+            echo "1. Yes"
+            echo "2. No"
+
+        while true; do
+            local include_insig_output
+            read -p "Enter the number identifying your choice: " include_insig_output
+            case $include_insig_output in
+                1) options="$options --include_insignificant_output" ;;
+                2) break ;;
+                *) echo "Invalid option. Please try again." ;;
+            esac
+        done
+    fi
+    
+    # For each combination of model and input, there's a perf results file and a time results file
+    # so only need to iterate over one of them
+    for results_file in $(ls results/"$set_name"/*time_results.csv); do
+        model=$(basename "$results_file" | cut -d '-' -f 1)
+        input=$(basename "$results_file" | cut -d '-' -f 2)
+        echo "Analyzing data for $model and $input..."
+        python3 data_scripts/analyze_data.py \
+            --experiment-set "$set_name" \
+            --model "$model" \
+            --input "$input" \
+            --significance-level "$significance_level" \
+            --docker-overhead-view "$docker_overhead" \
+            --mechanisms "$mechanisms" \
+            --metrics "$metrics" \
+            $options 
+        echo "Analysis complete. Press Enter to continue to the next experiment..."
+        read -r
+    done
 }
 
 function prompt_user_for_mechanisms() {
+    # Prompt the user for the deployment mechanisms they would like to include in the analysis
     echo "Which deployment mechanisms would you like to include? Note that when analyzing data, you can only include deployment mechanisms that were included in the data collection."
         echo "1. Native"
         echo "2. Docker"
@@ -564,139 +798,14 @@ function prompt_user_for_mechanisms() {
     mechanisms=$(IFS=,; echo "${mechanisms[*]}")
 }
 
-function retrieve_data_collection_results() {
-    prompt_user_for_target_details_if_not_set
-
-    echo "Retrieving results from target device..."
-
-    local set_name
-    read -p "Enter the name of the set of experiments to retrieve results from: " set_name
-
-    sshpass -p "$target_password" scp -r "$target_username@$target_address:/home/$target_username/Desktop/$SUITE_NAME/results/$set_name" results
-}
-
-function run_data_analysis() {
-    install_python_and_dependencies
-
-    echo "Analyzing results of experiments..."
-
-    local set_name
-    read -p "Enter the name of the set of experiments to analyze: " set_name
-
-    run_per_experiment_data_analysis $set_name
-
-    echo "Would you like to perform aggregate analysis on the entire set of experiments, using the results of the previous analyses?"
-        echo "1. Yes"
-        echo "2. No"
-    local aggregate_analysis_input
-    read -p "Enter the number identifying your choice: " aggregate_analysis_input
-    case $aggregate_analysis_input in
-        1) run_aggregate_data_analysis $set_name ;;
-        2) echo "Exiting..." ;;
-        *) echo "Invalid option." ;;
-    esac
-}
-
-function run_per_experiment_data_analysis() { 
-    set_name=$1
-
-    local significance_level
-    read -p "Enter the significance level to be used for the analysis (if nothing is entered, the default of 0.05 will be used): " significance_level
-    if [ -z "$significance_level" ]; then
-        significance_level=0.05
-    fi
-
-    options=""
-    local view_output
-    echo "Would you like to view the output for each experiment? If you answer 'no', you can still choose to save the outputs to files."
-        echo "1. Yes"
-        echo "2. No"
-    local view_output_input
-    read -p "Enter the number identifying your choice: " view_output_input
-    case $view_output_input in
-        1) options="$options --view-output" ;;
-        2) ;;
-        *) echo "Invalid option." ;;
-    esac 
-
-    local save_output
-    echo "Would you like to save the output for each experiment to a file?"
-        echo "1. Yes"
-        echo "2. No"
-    local save_output_input
-    read -p "Enter the number identifying your choice: " save_output_input
-    case $save_output_input in
-        1) options="$options --save-output" ;;
-        2) ;;
-        *) echo "Invalid option." ;;
-    esac
-
-    prompt_user_for_mechanisms
-    prompt_user_for_metrics $set_name
-
-    echo "Which view of the Docker deployment mechanism's overhead would you like to use?"
-        echo "1. Include only the Docker container's overhead"
-        echo "2. Include the Docker container's overhead and the Docker daemon's full overhead"
-        echo "3. Include the Docker container's overhead and the Docker daemon's estimated additional overhead due to the container"
-    local docker_overhead_input
-    read -p "Enter the number identifying your choice: " docker_overhead_input
-    case $docker_overhead_input in
-        1) docker_overhead=0 ;;
-        2) docker_overhead=1 ;;
-        3) docker_overhead=2 ;;
-        *) echo "Invalid option." ;;
-    esac
-
-    if [ "$view_output_input" = 1 ]; then
-        local include_insig_output
-        echo "Would you like to print statistically insignificant output during the analysis?"
-            echo "1. Yes"
-            echo "2. No"
-        local include_insig_output_input
-        read -p "Enter the number identifying your choice: " include_insig_output_input
-        case $include_insig_output_input in
-            1) options="$options --include_insignificant_output" ;;
-            2) ;;
-            *) echo "Invalid option." ;;
-        esac
-    fi
-    
-    # For each combination of model and input, there's a perf results file and a time results file
-    # so only need to iterate over one of them
-    for results_file in $(ls results/$set_name/*time_results.csv); do
-        model=$(basename "$results_file" | cut -d '-' -f 1)
-        input=$(basename "$results_file" | cut -d '-' -f 2)
-        echo "Analyzing data for $model and $input..."
-        echo data_scripts/analyze_data.py \
-            --experiment-set "$set_name" \
-            --model "$model" \
-            --input "$input" \
-            --significance-level "$significance_level" \
-            --docker-overhead-view "$docker_overhead" \
-            --mechanisms "$mechanisms" \
-            --metrics "$metrics" \
-            $options 
-        python3 data_scripts/analyze_data.py \
-            --experiment-set "$set_name" \
-            --model "$model" \
-            --input "$input" \
-            --significance-level "$significance_level" \
-            --docker-overhead-view "$docker_overhead" \
-            --mechanisms "$mechanisms" \
-            --metrics "$metrics" \
-            $options 
-        echo "Analysis complete. Press Enter to continue to the next experiment..."
-        read -r
-    done
-}
-
 function prompt_user_for_metrics() {
-    set_name=$1
+    # Prompt the user for the metrics they would like to analyze
+    set_name="$1" # 
 
     echo "Based on the data collected, the following metrics are available for analysis:"
         # Read one time file and one perf file to get the available metrics
-        time_file=$(ls results/$set_name/*time_results.csv | head -n 1)
-        perf_file=$(ls results/$set_name/*perf_results.csv | head -n 1)
+        time_file=$(ls results/"$set_name"/*time_results.csv | head -n 1)
+        perf_file=$(ls results/"$set_name"/*perf_results.csv | head -n 1)
 
         # The first 3 columns are the same for all result files; they only include non-metric columns
         # such as deployment mechanism, trial number and start time
@@ -717,60 +826,69 @@ function prompt_user_for_metrics() {
 }
 
 function list_models_and_inputs() {
-    set_name=$1
+    # List the models and inputs available for analysis based on the data collected
+    set_name="$1"
 
     echo "Based on the data collected, the following models and inputs are available for analysis:"
         # Read the aggregate results file's unique values for the first and second columns, which
         # correspond to the model and input respectively
-        models=$(cut -d ',' -f 1 results/$set_name/analyzed_results/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)        
-        inputs=$(cut -d ',' -f 2 results/$set_name/analyzed_results/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)
+        models=$(cut -d ',' -f 1 results/"$set_name"/analyzed_results/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)        
+        inputs=$(cut -d ',' -f 2 results/"$set_name"/analyzed_results/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)
 
         echo "models: $models"
         echo "inputs: $inputs"
 }
 
 function run_aggregate_data_analysis() {
-    set_name=$1
+    # Run aggregate data analysis on the results of the analysis of a set of experiments
+    set_name="$1"
 
-    prompt_user_for_metrics $set_name
+    prompt_user_for_metrics "$set_name"
 
     local options=""
-    local view_output
     echo "Would you like to view all of the plots that will be produced? If you answer 'no', you can still choose to save the outputs to files."
         echo "1. Yes"
         echo "2. No"
-    local view_output_input
-    read -p "Enter the number identifying your choice: " view_output_input
-    case $view_output_input in
-        1) options="$options --view-output" ;;
-        2) ;;
-        *) echo "Invalid option." ;;
-    esac 
 
-    local save_output
+    while true; do
+        local view_output
+        read -p "Enter the number identifying your choice: " view_output
+        case $view_output in
+            1) options="$options --view-output"; break ;;
+            2) break ;;
+            *) echo "Invalid option. Please try again." ;;
+        esac
+    done
+
     echo "Would you like to save all of the plots to files?"
         echo "1. Yes"
         echo "2. No"
-    local save_output_input
-    read -p "Enter the number identifying your choice: " save_output_input
-    case $save_output_input in
-        1) options="$options --save-output" ;;
-        2) ;;
-        *) echo "Invalid option." ;;
-    esac
 
-    list_models_and_inputs $set_name
+    while true; do
+        local save_output
+        read -p "Enter the number identifying your choice: " save_output
+        case $save_output in
+            1) options="$options --save-output"; break ;;
+            2) break ;;
+            *) echo "Invalid option. Please try again." ;;
+        esac
+    done
+
+    list_models_and_inputs "$set_name"
 
     echo "Would you like to compare across models?"
         echo "1. Yes"
         echo "2. No"
-    local compare_across_models_input
-    read -p "Enter the number identifying your choice: " compare_across_models_input
-    case $compare_across_models_input in
-        1) compare_across_models=1 ;;
-        2) compare_across_models=0 ;;
-        *) echo "Invalid option." ;;
-    esac
+
+    while true; do
+        local compare_across_models_input
+        read -p "Enter the number identifying your choice: " compare_across_models_input
+        case $compare_across_models_input in
+            1) compare_across_models=1; break ;;
+            2) compare_across_models=0; break ;;
+            *) echo "Invalid option. Please try again." ;;
+        esac
+    done
 
     if [ "$compare_across_models" = 1 ]; then
         read -p "Enter the models to compare (comma-separated): " models_to_compare
@@ -781,13 +899,16 @@ function run_aggregate_data_analysis() {
     echo "Would you like to compare across inputs?"
         echo "1. Yes"
         echo "2. No"
-    local compare_across_inputs_input
-    read -p "Enter the number identifying your choice: " compare_across_inputs_input
-    case $compare_across_inputs_input in
-        1) compare_across_inputs=1 ;;
-        2) compare_across_inputs=0 ;;
-        *) echo "Invalid option." ;;
-    esac
+
+    while true; do
+        local compare_across_inputs_input 
+        read -p "Enter the number identifying your choice: " compare_across_inputs_input
+        case $compare_across_inputs_input in
+            1) compare_across_inputs=1; break ;;
+            2) compare_across_inputs=0; break ;;
+            *) echo "Invalid option. Please try again." ;;
+        esac
+    done
 
     if [ "$compare_across_inputs" = 1 ]; then
         read -p "Enter the inputs to compare (comma-separated): " inputs_to_compare
@@ -795,10 +916,10 @@ function run_aggregate_data_analysis() {
         options="$options --compare-across-inputs --inputs-to-compare $inputs_to_compare --model $model"
     fi
 
-    echo data_scripts/analyze_aggregate_data.py \
-        --experiment-set "$set_name" \
-        --metrics "$metrics" \
-        $options
+    if [ "$compare_across_models" = 0 ] && [ "$compare_across_inputs" = 0 ]; then
+        echo "You must compare across either models or inputs. Please try again."
+        return
+    fi
 
     python3 data_scripts/analyze_aggregate_data.py \
         --experiment-set "$set_name" \
