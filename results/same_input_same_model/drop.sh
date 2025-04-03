@@ -10,9 +10,9 @@ for file in *perf_results.csv; do
             # Change "max-memory-over-time" to "max-memory-over-time-in-bytes"
             $16 = "max-memory-over-time-in-bytes";
             # Rename utilization columns by appending "-percentage"
-            $17 = "CPU-total-utilization-percentage";
-            $18 = "CPU-user-utilization-percentage";
-            $19 = "CPU-system-utilization-percentage";
+            $17 = "cpu-total-utilization-percentage";
+            $18 = "cpu-user-utilization-percentage";
+            $19 = "cpu-system-utilization-percentage";
             # Print desired columns: 1-14, skip 15, then 16-19
             print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$16,$17,$18,$19;
             next;

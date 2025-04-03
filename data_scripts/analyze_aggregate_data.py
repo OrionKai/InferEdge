@@ -23,6 +23,27 @@ AGGREGATE_CSV_FILENAME = "aggregate_results.csv"
 # PERF_AGGREGATE_CSV_FILENAME = f"perf_{AGGREGATE_CSV_FILENAME}"
 # TIME_AGGREGATE_CSV_FILENAME = f"time_{AGGREGATE_CSV_FILENAME}"
 
+DEPLOYMENT_MECHANISM_TO_COLOR = {
+    "wasm_aot": "tab:red",
+    "wasm_interpreted": "tab:blue",
+    "docker": "tab:green",
+    "native": "tab:orange",
+}
+
+DEPLOYMENT_MECHANISM_TO_MARKER = {
+    "wasm_aot": "o",
+    "wasm_interpreted": "s",
+    "docker": "^",
+    "native": "D",
+}
+
+DEPLOYMENT_MECHANISM_TO_LINESTYLE = {
+    "wasm_aot": "-",
+    "wasm_interpreted": "--",
+    "docker": "-.",
+    "native": ":",
+}
+
 def chart_compare_across_models_or_inputs(aggregate_df, metrics, across_models, variable_values, constant_value, 
     view_output, save_output, plots_path):
     deployment_mechanisms = aggregate_df["deployment-mechanism"].unique()
@@ -56,7 +77,8 @@ def chart_compare_across_models_or_inputs(aggregate_df, metrics, across_models, 
                 variable_values = deployment_mechanism_metric_df[variable].unique().tolist()
                 means = deployment_mechanism_metric_df[f"{metric}-mean"].tolist()
                 errors = [deployment_mechanism_metric_df[f"{metric}-error-lower"].tolist(), deployment_mechanism_metric_df[f"{metric}-error-upper"].tolist()]
-                plt.errorbar(variable_values, means, yerr=errors, label=deployment_mechanism, capsize=5)
+                plt.errorbar(variable_values, means, yerr=errors, label=deployment_mechanism, capsize=5, 
+                    color=DEPLOYMENT_MECHANISM_TO_COLOR[deployment_mechanism], linestyle=DEPLOYMENT_MECHANISM_TO_LINESTYLE[deployment_mechanism])
 
             # Set title and labels
             plt.title(f"{metric_name_without_hyphen} by {variable} on {constant} {constant_value}\nfor different deployment mechanisms")

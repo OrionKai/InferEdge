@@ -127,19 +127,19 @@ function acquire_files() {
     if [ "$arch" = "arm64" ]; then
         setup_qemu
     fi
-    # install_rust
-    # install_python_and_dependencies # TODO: check if torchvision really required
-    # generate_model_files
+    install_rust
+    install_python_and_dependencies # TODO: check if torchvision really required
+    generate_model_files
 
-    # case $arch in
-    #     "arm64") acquire_files_arm64_specific ;;
-    #     "amd64") acquire_files_amd64_specific ;;
-    # esac
+    case $arch in
+        "arm64") acquire_files_arm64_specific ;;
+        "amd64") acquire_files_amd64_specific ;;
+    esac
 
-    # build_cadvisor
-    # download_prometheus 
+    build_cadvisor
+    download_prometheus 
     build_docker_and_native 
-    # compile_wasm 
+    compile_wasm 
 }
 
 function setup_qemu() {
@@ -703,7 +703,11 @@ function prompt_user_for_metrics() {
         time_metrics=$(head -n 1 "$time_file" | tr -d '\r' | cut -d ',' -f 4-)
         perf_metrics=$(head -n 1 "$perf_file" | tr -d '\r' | cut -d ',' -f 4-)
 
-        echo "time metrics: $time_metrics"
+        # If perf_metrics includes instructions and cycles, then we must additionally consider the
+        # instructions-per-cycle and cycles-per-instruction metrics calculated in the analysis
+        if [[ "$perf_metrics" == *"instructions"* && "$perf_metrics" == *"cycles"* ]]; then
+            perf_metrics="$perf_metrics,instructions-per-cycle,cycles-per-instruction"
+        fi
 
         echo "$time_metrics,$perf_metrics"
     read -p "Enter the metrics you would like to analyze (comma-separated). If nothing is entered, all metrics will be used: " metrics

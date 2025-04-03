@@ -1,0 +1,59 @@
+RRENT TIME 2025-04-02 10:06:51.405388+00:00
+                                           CURRENT TIME 1743588411.40564
+                                                                        Starting native experiment
+                                                                                                  Trial 1
+                                                                                                         Error during native trial 1, attempt 1: Expecting value: line 1 column 1 (char 0)
+                                               {}
+                                                 Traceback (most recent call last):
+                                                                                     File "/home/pi/Desktop/CS4099Suite/myenv/lib/python3.11/site-packages/requests/models.py", line 974, in json
+                                                          return complexjson.loads(self.text, **kwargs)
+                                                                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+               File "/usr/lib/python3.11/json/__init__.py", line 346, in loads
+                                                                                  return _default_decoder.decode(s)
+                                                                                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+               File "/usr/lib/python3.11/json/decoder.py", line 337, in decode
+                                                                                  obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+                                                                                                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                               File "/usr/lib/python3.11/json/decoder.py", line 355, in raw_decode
+                                                                                                                      raise JSONDecodeError("Expecting value", s, err.value) from None
+                                           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+                                                                                                                  During handling of the above exception, another exception occurred:
+
+                                          Traceback (most recent call last):
+                                                                              File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 420, in collect_perf_data
+                          trial_metrics = run_non_container_perf_and_memory_experiment(perf_events, native_cmd)
+                                                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                               File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 500, in run_non_container_perf_and_memory_experiment
+                                      metrics.update(get_parsed_prometheus_query_results(formatted_query, label))
+                                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                      File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 676, in get_parsed_prometheus_query_results
+                    data = query_prometheus(query)
+                                                             ^^^^^^^^^^^^^^^^^^^^^^^
+                                                                                      File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 629, in query_prometheus
+                                 return query_prometheus_with_params(params)
+                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                                                                                             File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 634, in query_prometheus_with_params
+                                                                                    data = response.json()
+                                                                                                                     ^^^^^^^^^^^^^^^
+                                                                                                                                      File "/home/pi/Desktop/CS4099Suite/myenv/lib/python3.11/site-packages/requests/models.py", line 978, in json
+                                                                                                           raise RequestsJSONDecodeError(e.msg, e.doc, e.pos)
+                  requests.exceptions.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+                                                                                                During handling of the above exception, another exception occurred:
+
+                        Traceback (most recent call last):
+                                                            File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 754, in <module>
+                                                                                                                                          main()
+       File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 748, in main
+                                                                                 collect_perf_data(trials, PERF_EVENTS, results_filename_prefix_with_path + PERF_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+          File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 429, in collect_perf_data
+                                                                                                 cleanup_custom_cgroup()
+                                                                                                                          File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 649, in cleanup_custom_cgroup
+                                                                          delete_prometheus_series_given_id(CUSTOM_CGROUP_NAME)
+                                                                                                                                 File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 667, in delete_prometheus_series_given_id
+                                                                                             delete_prometheus_series(match)
+                                                                                                                              File "/home/pi/Desktop/CS4099Suite/collect_data.py", line 673, in delete_prometheus_series
+                                                                                 raise Exception("Error: Prometheus series deletion failed")
+ Exception: Error: Prometheus series deletion failed
+                                                    Connection to 192.168.0.100 closed.

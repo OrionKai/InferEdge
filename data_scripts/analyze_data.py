@@ -17,6 +17,9 @@ DEFAULT_METRICS = "instructions,cpu-cycles,cache-references,cache-misses,page-fa
 # The names of columns that are not metrics and must hence always be included in the dataframes
 NON_METRIC_COLUMNS = ["index", "deployment-mechanism", "trial-number", "start-time"]
 
+# The names of extra columns computed from values in the result files 
+COMPUTED_COLUMNS = ["instructions-per-cycle", "cycles-per-instruction"]
+
 # The absolute path of the "data_scripts" directory where this script is in
 SCRIPTS_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -297,7 +300,7 @@ def main():
     model_with_underscores = model
     input_with_underscores = input
     deployment_mechanisms = [mechanism.strip() for mechanism in args.mechanisms.split(",")]
-    metrics = [metric.strip() for metric in args.metrics.split(",")]
+    metrics = [metric.strip() for metric in args.metrics.split(",")] + COMPUTED_COLUMNS
 
     perf_filename = f"{model_with_underscores}-{input_with_underscores}-perf_results.csv"
     time_filename = f"{model_with_underscores}-{input_with_underscores}-time_results.csv"

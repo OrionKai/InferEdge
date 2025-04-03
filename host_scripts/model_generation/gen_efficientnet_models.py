@@ -18,6 +18,7 @@ def main():
 
     efficientnet_variants = []
 
+    # TODO: add names as well
     if args.b0:
         efficientnet_variants.append(efficientnet_b0)
     if args.b1:
