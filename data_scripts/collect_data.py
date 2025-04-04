@@ -947,8 +947,6 @@ def main():
     results_filename_prefix_with_path = os.path.join(RESULTS_DIR, set_name, results_filename_prefix)
 
     try:
-        print("CURRENT TIME", datetime.now(timezone.utc))
-        print("CURRENT TIME", datetime.now(timezone.utc).timestamp())
         collect_perf_data(trials, results_filename_prefix_with_path + PERF_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, allow_missing_metrics, mechanisms)
         collect_time_data(trials, results_filename_prefix_with_path + TIME_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
     finally:
