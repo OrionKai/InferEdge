@@ -9,13 +9,8 @@ import argparse
 import os
 import csv
 
-# String representing the default value for the --metrics argument
-DEFAULT_METRICS = "instructions,cpu-cycles,cache-references,cache-misses,page-faults,bus-cycles," \
-    "branch-instructions,branch-misses,major-faults,minor-faults,avg_memory_over_time,max_memory_over_time," \
-    "cpu_total_utilization,cpu_user_utilization,cpu_system_utilization,wall-time-seconds"
-
 # The names of columns that are not metrics and must hence always be included in the dataframes
-NON_METRIC_COLUMNS = ["index", "deployment-mechanism", "trial-number", "start-time"]
+NON_METRIC_COLUMNS = ["index", "deployment-mechanism", "trial-number"]
 
 # The names of extra columns computed from values in the result files 
 COMPUTED_COLUMNS = ["instructions-per-cycle", "cycles-per-instruction"]
@@ -32,8 +27,6 @@ RESULTS_DIR = os.path.join(BENCHMARK_DIR, "results")
 # The name of the CSV file where the aggregate results from all the experiments within
 # an experiment set are stored 
 AGGREGATE_CSV_FILENAME = "aggregate_results.csv"
-PERF_AGGREGATE_CSV_FILENAME = f"perf_{AGGREGATE_CSV_FILENAME}"
-TIME_AGGREGATE_CSV_FILENAME = f"time_{AGGREGATE_CSV_FILENAME}"
 
 # Numbers representing the different views of the Docker overhead
 DOCKER_OVERHEAD_EXCLUDE_DAEMON = 0
@@ -41,6 +34,17 @@ DOCKER_OVERHEAD_INCLUDE_FULL_DAEMON = 1
 DOCKER_OVERHEAD_INCLUDE_ADDITIONAL_DAEMON = 2
 
 def welch_t_test_with_confidence_interval(arr_x, arr_y, alpha=0.05):
+    """Perform Welch's t-test on two samples and calculate the confidence interval of the difference of the means.
+
+    Args:
+        arr_x: First sample.
+        arr_y: Second sample.
+        alpha: Significance level for the confidence interval.
+    Returns:
+        tuple: Mean of arr_x, mean of arr_y, mean difference, the confidence interval's lower bound,
+               the confidence interval's upper bound, the half-width of the confidence interval,
+               whether the difference is statistically significant, and the confidence intervals for arr_x and arr_y.
+    """
     # Calculate the mean of the data and compare them
     descr_stats_x = smw.DescrStatsW(arr_x)
     descr_stats_y = smw.DescrStatsW(arr_y)
@@ -70,6 +74,16 @@ def welch_t_test_with_confidence_interval(arr_x, arr_y, alpha=0.05):
     return x_mean, y_mean, mean_diff, ci_lower, ci_upper, ci_half_width, statistically_significant, x_ci, y_ci
 
 def initialize_aggregate_df(metric_cols, deployment_mechanisms, model, input):
+    """Initialize the aggregate dataframe storing aggregate results for each deployment mechanism.
+
+    Args:
+        metric_cols: List of column names corresponding to the metrics.
+        deployment_mechanisms: List of deployment mechanisms.
+        model: The name of the model used in the experiments.
+        input: The name of the input used in the experiments.
+    Returns:
+        pd.DataFrame: The initialized aggregate dataframe.
+    """
     # We include the model and input in the aggregate dataframe since we will later add
     # the data to a CSV file aggregating results from all experiments within an experiment set
     aggregate_df = pd.DataFrame(columns=["model", "input", "deployment-mechanism"])
@@ -93,8 +107,23 @@ def initialize_aggregate_df(metric_cols, deployment_mechanisms, model, input):
 
     return aggregate_df
 
-def analyze_data_significant_difference(df, significance_level, metrics, model, model_with_underscores,
-    input, input_with_underscores, analyzed_results_path, include_insignificant_output, view_output, save_output):
+def analyze_data_significant_difference(df, significance_level, metrics, model, input, analyzed_results_path, 
+    include_insignificant_output, view_output, save_output):
+    """Analyze the data to determine if there are statistically significant differences between deployment mechanisms.
+
+    Args:
+        df: The dataframe containing the experimental data.
+        significance_level: The significance level for statistical tests.
+        metrics: List of metrics to analyze.
+        model: The name of the model used in the experiments.
+        input: The name of the input used in the experiments.
+        analyzed_results_path: Path to save analyzed results.
+        include_insignificant_output: Whether to include output for insignificant results.
+        view_output: Whether to view the output of the analysis.
+        save_output: Whether to save the output of the analysis to files.
+    Returns:
+        pd.DataFrame: An aggregate dataframe containing aggregate results for each deployment mechanism.
+    """
     # For each deployment mechanism, group the results for each metric
     grouped_df = df.groupby("deployment-mechanism")[metrics]
 
@@ -120,20 +149,19 @@ def analyze_data_significant_difference(df, significance_level, metrics, model, 
             x_mean, y_mean, mean_diff, ci_lower, ci_upper, ci_half_width, statistically_significant, x_ci, y_ci = \
                 welch_t_test_with_confidence_interval(arr_x, arr_y, alpha=significance_level)
 
+            # Calculate the ratio of the means and its confidence interval
             if x_mean < y_mean:
                 ratio = y_mean / x_mean
                 ratio_ci = ci_half_width / x_mean
                 ratio_min = ratio - ratio_ci
                 ratio_max = ratio + ratio_ci
                 ratio_message = f"{deployment_mechanism_x} is {ratio_min:.2f} to {ratio_max:.2f} times larger than {deployment_mechanism_y} for {metric}"
-                print_if_true(f"{deployment_mechanism_y} is {ratio_min:.2f} to {ratio_max:.2f} times larger than {deployment_mechanism_x} for {metric}\n", view_output)
             else:
                 ratio = x_mean / y_mean
                 ratio_ci = ci_half_width / y_mean
                 ratio_min = ratio - ratio_ci
                 ratio_max = ratio + ratio_ci
                 ratio_message = f"{deployment_mechanism_y} is {ratio_min:.2f} to {ratio_max:.2f} times larger than {deployment_mechanism_x} for {metric}"
-                print_if_true(f"{deployment_mechanism_x} is {ratio_min:.2f} to {ratio_max:.2f} times larger than {deployment_mechanism_y} for {metric}\n", view_output)
 
             # Update the relevant values of the appropriate row in the aggregate dataframe
             # In the future, this can be made more efficient as these values are being calculated
@@ -170,24 +198,48 @@ def analyze_data_significant_difference(df, significance_level, metrics, model, 
 
         if save_output:
             # Save the comparison dataframe to a CSV file
-            comparison_csv_filename = f"{model_with_underscores}_{input_with_underscores}_{deployment_mechanism_x}_{deployment_mechanism_y}_comparison.csv"
+            comparison_csv_filename = f"{model}_{input}_{deployment_mechanism_x}_{deployment_mechanism_y}_comparison.csv"
             comparison_csv_path = os.path.join(analyzed_results_path, comparison_csv_filename)
 
-            # Enclose everything in quotes, since otherwise importing them into e.g. Excel will
+            # Enclose everything in quotes, since otherwise importing them into e.g. Excel might
             # not work properly
             comparison_df.to_csv(comparison_csv_path, index=False, quoting=csv.QUOTE_ALL)
         
     return aggregate_df
 
 def add_thousand_separator(number):
-    # Add a thousand separator to the number
+    """Add a thousand separator to a number.
+
+    Args:
+        number: The number to format.
+    Returns:
+        str: The formatted number with a thousand separator.
+    """
     return f"{number:,}"
 
 def print_if_true(message, condition):
+    """Print a message if the condition is true.
+    
+    Args:
+        message: The message to print.
+        condition: The condition to check.
+    """
     if condition:
         print(message)
 
 def parse_csv_rows(results_filename, deployment_mechanisms, metrics, docker_overhead_view, is_perf_file=True):
+    """Parse the CSV file containing the results of the experiments.
+
+    Args:
+        results_filename: The path to the CSV file.
+        deployment_mechanisms: List of deployment mechanisms to include in subsequent analyses.
+        metrics: List of metrics to include in subsequent analyses.
+        docker_overhead_view: The view of the Docker overhead to use.
+        is_perf_file: Whether the CSV file contains performance data (besides time data) or time data.
+    Returns:
+        pd.DataFrame: The parsed dataframe.
+    """
+
     df = pd.read_csv(results_filename)
 
     # Drop columns corresponding to metrics that were not specified
@@ -218,22 +270,39 @@ def parse_csv_rows(results_filename, deployment_mechanisms, metrics, docker_over
         df = df[~df["deployment-mechanism"].str.startswith("docker_container_and_daemon")]   
 
     if is_perf_file:
-        # Add new columns for instructions-per-cycle and cycles-per-instruction
-        df["instructions-per-cycle"] = df["instructions"] / df["cpu-cycles"]
-        df["cycles-per-instruction"] = df["cpu-cycles"] / df["instructions"]
+        # Check if the "cpu-cycles" and "instructions" columns are present
+        if "cpu-cycles" in df.columns and "instructions" in df.columns:
+            # Add new columns for instructions-per-cycle and cycles-per-instruction
+            df["instructions-per-cycle"] = df["instructions"] / df["cpu-cycles"]
+            df["cycles-per-instruction"] = df["cpu-cycles"] / df["instructions"]
 
     # Drop rows corresponding to deployment mechanisms that were not specified
     df = df.drop(df[~df["deployment-mechanism"].isin(deployment_mechanisms)].index)
 
-    # Remove the start time column since it is not relevant for the analysis
-    df = df.drop(columns=["start-time"])
-
     return df
 
 def get_metrics_in_df(df):
+    """Get the metrics present in the dataframe.
+
+    Args:
+        df: The dataframe containing the experimental data.
+    Returns:
+        list: List of metrics present in the dataframe.
+    """
     return [col for col in df.columns if col not in NON_METRIC_COLUMNS]
 
-def plot_metrics_bar_chart(aggregate_df, metrics, view_output, save_output, plots_path, model_with_underscores, input_with_underscores):
+def plot_metrics_bar_chart(aggregate_df, metrics, view_output, save_output, plots_path, model, input):
+    """Plot the deployment mechanisms' aggregate results for each metric.
+
+    Args:
+        aggregate_df: The aggregate dataframe containing the results.
+        metrics: List of metrics to plot.
+        view_output: Whether to view the plots.
+        save_output: Whether to save the plots to files.
+        plots_path: Path to save the plots.
+        model: The name of the model used in the experiments.
+        input: The name of the input used in the experiments.
+    """
     deployment_mechanisms = aggregate_df["deployment-mechanism"].unique().tolist()
 
     # For each metric, plot the mean and confidence interval for each deployment mechanism
@@ -248,12 +317,12 @@ def plot_metrics_bar_chart(aggregate_df, metrics, view_output, save_output, plot
         plt.bar(deployment_mechanisms, means, yerr=errors, capsize=5)
 
         # Set title and labels
-        plt.title(f"{metric_name_without_hyphen} by deployment mechanism\nfor model {model_with_underscores} and input {input_with_underscores}") 
+        plt.title(f"{metric_name_without_hyphen} by deployment mechanism\nfor model {model} and input {input}") 
         plt.ylabel(metric_name_without_hyphen)
         plt.xlabel("deployment mechanism")
 
         if save_output:
-            plot_filename = f"{model_with_underscores}_{input_with_underscores}_{metric_with_underscores}_bar_chart.png"
+            plot_filename = f"{model}-{input}-{metric_with_underscores}-bar_chart.png"
             plot_filepath = os.path.join(plots_path, plot_filename)
             plt.savefig(plot_filepath)
         
@@ -261,6 +330,14 @@ def plot_metrics_bar_chart(aggregate_df, metrics, view_output, save_output, plot
             plt.show()
 
 def create_or_update_aggregate_csv(aggregate_df, aggregate_csv_path):
+    """Create or update the aggregate results CSV file for this set of experiments, which for each experiment contains each 
+    deployment mechanism's aggregate results for each metric.
+
+    Args:
+        aggregate_df: The aggregate dataframe containing each deployment mechanism's aggregate results for each metric for
+            this experiment.
+        aggregate_csv_path: The path to the aggregate CSV file.
+    """
     # Create the aggregate results CSV file if it does not exist
     if not os.path.exists(aggregate_csv_path):
         aggregate_df.to_csv(aggregate_csv_path, index=False)
@@ -273,6 +350,11 @@ def create_or_update_aggregate_csv(aggregate_df, aggregate_csv_path):
         existing_aggregate_df.to_csv(aggregate_csv_path, index=False)
 
 def create_directory_if_not_exists(directory):
+    """Create a directory if it does not exist.
+
+    Args:
+        directory: The path to the directory to create.
+    """
     if not os.path.exists(directory):
         os.makedirs(directory)
 
@@ -286,31 +368,28 @@ def main():
     parser.add_argument("--include-insignificant-output", action="store_true", help="Include statistical comparisons when they are not statistically significant.")
     parser.add_argument("--mechanisms", type=str, default="docker,wasm_interpreted,wasm_aot,native",
                     help="Comma-separated list of mechanisms to include (choose from docker, wasm_interpreted, wasm_aot, native)")
-    parser.add_argument("--metrics", type=str, default=DEFAULT_METRICS,
-                    help="Comma-separated list of metrics to include.")
+    parser.add_argument("--metrics", type=str, required=True, help="Comma-separated list of metrics to include.")
     parser.add_argument("--view-output", action="store_true", help="View the output of the analysis.")
     parser.add_argument("--save-output", action="store_true", 
         help="Save the output of the analysis to files. Note that the aggregate CSV will always be saved, since it is required for aggregate analysis.")
+    parser.add_argument("--analyzed-results-dir", type=str, default="analyzed_results",
+        help="The name of the directory to save the analyzed results in.")
     args = parser.parse_args()
 
-    # Replace "." with "_" in the model and input names since this is how they were used
-    # in determining the result filename, to avoid issues with file paths
     model = args.model
     input = args.input
-    model_with_underscores = model
-    input_with_underscores = input
     deployment_mechanisms = [mechanism.strip() for mechanism in args.mechanisms.split(",")]
     metrics = [metric.strip() for metric in args.metrics.split(",")] + COMPUTED_COLUMNS
 
-    perf_filename = f"{model_with_underscores}-{input_with_underscores}-perf_results.csv"
-    time_filename = f"{model_with_underscores}-{input_with_underscores}-time_results.csv"
+    perf_filename = f"{model}-{input}-perf_results.csv"
+    time_filename = f"{model}-{input}-time_results.csv"
     
     # The paths to the experiment's set directory within the results directory
     # the analyzed results directory within the experiment's set directory
     # the plots directory within the analyzed results directory
     # and the comparisons directory within the analyzed results directory
     experiments_set_path = os.path.join(RESULTS_DIR, args.experiment_set)
-    analyzed_results_path = os.path.join(experiments_set_path, "analyzed_results")
+    analyzed_results_path = os.path.join(experiments_set_path, args.analyzed_results_dir)
     plots_path = os.path.join(analyzed_results_path, "plots")
     comparisons_path = os.path.join(analyzed_results_path, "comparisons")
 
@@ -332,14 +411,14 @@ def main():
     df = pd.merge(perf_df, time_df, on=["deployment-mechanism", "trial-number"])
     metrics = get_metrics_in_df(df)
     aggregate_df = analyze_data_significant_difference(df, args.significance_level, metrics, model,
-        model_with_underscores, input, input_with_underscores, comparisons_path, args.include_insignificant_output,
+        input, comparisons_path, args.include_insignificant_output,
         args.view_output, args.save_output)
     aggregate_csv_filepath = os.path.join(analyzed_results_path, AGGREGATE_CSV_FILENAME)
     create_or_update_aggregate_csv(aggregate_df, aggregate_csv_filepath)
     
     if args.view_output or args.save_output:
         plot_metrics_bar_chart(aggregate_df, metrics, args.view_output, args.save_output, plots_path,
-            model_with_underscores, input_with_underscores)
+            model, input)
 
 if __name__ == "__main__":
     main()

@@ -12,27 +12,21 @@ import time
 from datetime import datetime, timezone
 from sys import platform
 
-# The absolute path of the "scripts" directory where this script is in TODO: fix
-SCRIPTS_DIR = os.path.abspath(os.path.dirname(__file__))
-
-# The absolute path of the parent "Benchmark" directory
-BENCHMARK_DIR = os.path.join(SCRIPTS_DIR, "..")
-# Right now BENCHMARK_DIR = SCRIPTS_DIR because putting this script in the SCRIPTS_DIR
-# caused path problems, so this script is currently on the root level of the Benchmark directory
-BENCHMARK_DIR = SCRIPTS_DIR
+# The root of the suite directory where this script is in
+SUITE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 # The absolute path of the directory storing results
-RESULTS_DIR = os.path.join(BENCHMARK_DIR, "results")
+RESULTS_DIR = os.path.join(SUITE_DIR, "results")
 
 # Path to the WebAssembly binary
 WASM_BINARY_PATH = os.path.expanduser("~/.wasmedge/bin/wasmedge")
 
 # Path to the WebAssembly files
-INTERPRETED_WASM_FILE_PATH = f"{BENCHMARK_DIR}/wasm/interpreted.wasm"
-AOT_WASM_FILE_PATH_TEMPLATE = f"{BENCHMARK_DIR}/wasm/aot.{{extension}}"
+INTERPRETED_WASM_FILE_PATH = f"{SUITE_DIR}/wasm/interpreted.wasm"
+AOT_WASM_FILE_PATH_TEMPLATE = f"{SUITE_DIR}/wasm/aot.{{extension}}"
 
 # Path to cAdvisor perf events config file
-CADVISOR_PERF_CONFIG_PATH = f"{BENCHMARK_DIR}/cadvisor/perf_config.json"
+CADVISOR_PERF_CONFIG_PATH = f"{SUITE_DIR}/cadvisor/perf_config.json"
 
 # The list of perf events to measure
 def read_perf_config(config_path):
@@ -43,47 +37,41 @@ def read_perf_config(config_path):
 PERF_EVENTS = read_perf_config(CADVISOR_PERF_CONFIG_PATH)
 
 # Path to the cAdvisor, Prometheus binaries
-CADVISOR_BINARY_PATH = f"{BENCHMARK_DIR}/cadvisor/cadvisor"
-PROMETHEUS_BINARY_PATH = f"{BENCHMARK_DIR}/prometheus/prometheus"
+CADVISOR_BINARY_PATH = f"{SUITE_DIR}/cadvisor/cadvisor"
+PROMETHEUS_BINARY_PATH = f"{SUITE_DIR}/prometheus/prometheus"
 
 # Path to the native-compiled code
 NATIVE_BINARY_NAME = "torch_image_classification"
-NATIVE_BINARY_PATH = f"{BENCHMARK_DIR}/native/{NATIVE_BINARY_NAME}"
+NATIVE_BINARY_PATH = f"{SUITE_DIR}/native/{NATIVE_BINARY_NAME}"
 
-MODELS_PATH = f"{BENCHMARK_DIR}/models"
-INPUTS_PATH = f"{BENCHMARK_DIR}/inputs"
+# Path to the models and inputs directories
+MODELS_PATH = f"{SUITE_DIR}/models"
+INPUTS_PATH = f"{SUITE_DIR}/inputs"
 
 # Container and image names
 CONTAINER_NAME="benchmarked-container"
 IMG_NAME_TEMPLATE="image-classification:{arch}"         
 
 # Commands to start, stop, remove, inspect container
-# CONTAINER_START_CMD_TEMPLATE=f"sudo docker run --privileged --name {CONTAINER_NAME} {{img_name}}"
 CONTAINER_START_CMD_TEMPLATE = f"sudo docker run --privileged --name {CONTAINER_NAME} -v {MODELS_PATH}:/models -v {INPUTS_PATH}:/inputs {{img_name}}"
-
 CONTAINER_STOP_CMD = "sudo docker stop {container_name}"
 CONTAINER_REMOVE_CMD = "sudo docker rm {container_name}"
 CONTAINER_INSPECT_ID_CMD = "sudo docker inspect -f '{{{{.Id}}}}' {container_name}"
 
 # Commands to start and stop Prometheus, cAdvisor
-PROMETHEUS_START_CMD = f"sudo {PROMETHEUS_BINARY_PATH} --config.file={BENCHMARK_DIR}/prometheus/prometheus.yml --web.enable-admin-api" 
+PROMETHEUS_START_CMD = f"sudo {PROMETHEUS_BINARY_PATH} --config.file={SUITE_DIR}/prometheus/prometheus.yml --web.enable-admin-api" 
 PROMETHEUS_STOP_CMD = f"sudo pkill -f {PROMETHEUS_BINARY_PATH}"
 CADVISOR_START_CMD = f"sudo {CADVISOR_BINARY_PATH} -perf_events_config={CADVISOR_PERF_CONFIG_PATH}"
 CADVISOR_STOP_CMD = f"sudo pkill -f {CADVISOR_BINARY_PATH}"
 
-# Command to clear OS-level caches
-CLEAR_CACHE_CMD = "sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'"
-
+# Values for the PATH and LD_LIBRARY_PATH environment variables
 LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH")
 PATH = os.environ.get("PATH")
-
-# The command used to start perf
-PERF_CMD_PREFIX=f"sudo LD_LIBRARY_PATH={LD_LIBRARY_PATH} PATH={PATH} perf stat -e"
 
 # The command used to measure wall time
 TIME_CMD_PREFIX="/usr/bin/time -v"
 
-# The list of metrics from running time to measure, alongside the 
+# A list of tuples containing the names of metrics from running time to measure, alongside the 
 # new name of the metric as it will be written in the results file
 TIME_METRICS = [("Elapsed (wall clock) time", "wall-time-seconds")]
 
@@ -101,7 +89,7 @@ CSV_BASIC_FIELD_NAMES = ["deployment-mechanism", "trial-number", "start-time"]
 MEMORY_FIELD_NAMES = ["avg-memory-over-time-in-bytes", "max-memory-over-time-in-bytes"]
 
 # Field names for CPU metrics
-CPU_FIELD_NAMES = ["CPU-total-utilization-percentage", "CPU-user-utilization-percentage", "CPU-system-utilization-percentage"]
+CPU_FIELD_NAMES = ["cpu-total-utilization-percentage", "cpu-user-utilization-percentage", "cpu-system-utilization-percentage"]
 
 # Field names for events that might be missing/not available for cAdvisor and Prometheus
 # depending on the system
@@ -122,7 +110,6 @@ DAEMON_MEASUREMENT_TIME = 10
 CADVISOR_PROMETHEUS_WAIT_TIME = 20
 
 ## Prometheus queries
-PROMETHEUS_CONTAINER_MEMORY_USAGE_BYTES_FIELD_NAME = "container_memory_usage_bytes"
 PROMETHEUS_QUERIES_LABELS = [None] + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES
 
 # The daemon's ID as expected by Prometheus
@@ -158,10 +145,7 @@ PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_DURING_CONTAINER = [PROMETHEUS_PERF_QU
 for query in PROMETHEUS_PERF_AND_MEMORY_QUERIES[1:]:
     PROMETHEUS_PERF_AND_MEMORY_QUERIES_DAEMON_DURING_CONTAINER.append(query.replace("{name_or_id}", DAEMON_ID))
 
-PROMETHEUS_DOCKER_DAEMON_MEMORY_QUERY = "container_memory_usage_bytes{{id='/system.slice/docker.service'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f}"
-PROMETHEUS_DOCKER_CONTAINER_MEMORY_QUERY = "container_memory_usage_bytes{{id='{name_or_id}'}}[{container_duration_ms}ms] @ {end_container_timestamp:.2f}"
-
-# The commands used to start a custom cgroup and execute a command in it
+# The commands used to start a custom cgroup and execute a command in it, and to delete it
 CREATE_CGROUP_CMD=f"sudo cgcreate -g memory:{CUSTOM_CGROUP_NAME}"
 EXEC_IN_CGROUP_CMD_PREFIX=f"sudo LD_LIBRARY_PATH={LD_LIBRARY_PATH} PATH={PATH} cgexec -g memory:{CUSTOM_CGROUP_NAME}"
 DELETE_CGROUP_CMD=f"sudo cgdelete -g memory:{CUSTOM_CGROUP_NAME}"
@@ -173,14 +157,28 @@ MAX_RETRIES = 15
 cadvisor_and_prometheus_running = False
 
 def is_cgroup_v2():
+    """Checks if the system is using cgroup v2
+    
+    Returns:
+        bool: True if the system is using cgroup v2, False otherwise
+    """
     return os.path.isfile("/sys/fs/cgroup/cgroup.controllers")
 
-def is_mac():
-    return platform == "darwin"
-
-def collect_time_data(n, time_metrics, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
+def collect_time_data(n, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd,
     deployment_mechanisms):
-    time_metrics_short_names = [time_metric[1] for time_metric in time_metrics]
+    """Runs the time experiments and collects the relevant data from the output, storing it in the specified file.
+
+    Args:
+        n: The number of trials to run for each deployment mechanism
+        results_filename: The name of the file to store the results in
+        container_exec_cmd: The command to execute the workload in the container, for the Docker mechanism
+        container_start_cmd: The command to start the container, for the Docker mechanism
+        wasm_interpreted_cmd: The command to run the workload for the WebAssembly interpreted mechanism
+        wasm_aot_cmd: The command to run the workload for the WebAssembly AOT mechanism
+        native_cmd: The command to run the workload as a standalone native binary, for the native mechanism
+        deployment_mechanisms: The list of deployment mechanisms to use
+    """
+    time_metrics_short_names = [time_metric[1] for time_metric in TIME_METRICS]
 
     # Randomly intersperse experiments of each type
     experiments = []
@@ -202,20 +200,21 @@ def collect_time_data(n, time_metrics, results_filename, container_exec_cmd, con
 
     metrics = []
 
-    for experiment in experiments:
-        print(f"Starting {experiment} experiment")
+    # Noting that experiments contains deployment mechanisms in the order they will be run
+    for deployment_mechanism in experiments:
+        print(f"Starting {deployment_mechanism} experiment")
         start_time = datetime.now(timezone.utc)
         trial_metrics = {}
 
-        if experiment == "docker":
+        if deployment_mechanism == "docker":
             trial = docker_trial
             print(f"Trial {trial}")
             docker_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = run_time_experiment(container_start_cmd + " " + container_exec_cmd, time_metrics)
+                    trial_metrics = run_time_experiment(container_start_cmd + " " + container_exec_cmd)
                     remove_container(CONTAINER_NAME)
-                    trial_metrics_rows = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, time_metrics_short_names)
+                    trial_metrics_rows = prepare_trial_data_as_csv_rows(deployment_mechanism, trial, start_time, trial_metrics, time_metrics_short_names)
                     metrics.extend(trial_metrics_rows)
                     break
                 except Exception as e:
@@ -223,42 +222,42 @@ def collect_time_data(n, time_metrics, results_filename, container_exec_cmd, con
                     remove_container(CONTAINER_NAME)
                     if attempt == MAX_RETRIES - 1:
                         break
-        elif experiment == "wasm_interpreted":
+        elif deployment_mechanism == "wasm_interpreted":
             trial = wasm_interpreted_trial
             print(f"Trial {trial}")
             wasm_interpreted_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = run_time_experiment(wasm_interpreted_cmd, time_metrics)
-                    trial_metrics_rows = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, time_metrics_short_names)
+                    trial_metrics = run_time_experiment(wasm_interpreted_cmd)
+                    trial_metrics_rows = prepare_trial_data_as_csv_rows(deployment_mechanism, trial, start_time, trial_metrics, time_metrics_short_names)
                     metrics.extend(trial_metrics_rows)
                     break
                 except Exception as e:
                     print(f"Error during wasm_interpreted trial {trial}, attempt {attempt + 1}: {e}")
                     if attempt == MAX_RETRIES - 1:
                         break
-        elif experiment == "wasm_aot":
+        elif deployment_mechanism == "wasm_aot":
             trial = wasm_aot_trial
             print(f"Trial {trial}")
             wasm_aot_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = run_time_experiment(wasm_aot_cmd, time_metrics)
-                    trial_metrics_rows = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, time_metrics_short_names)
+                    trial_metrics = run_time_experiment(wasm_aot_cmd)
+                    trial_metrics_rows = prepare_trial_data_as_csv_rows(deployment_mechanism, trial, start_time, trial_metrics, time_metrics_short_names)
                     metrics.extend(trial_metrics_rows)
                     break
                 except Exception as e:
                     print(f"Error during wasm_aot trial {trial}, attempt {attempt + 1}: {e}")
                     if attempt == MAX_RETRIES - 1:
                         break
-        elif experiment == "native":
+        elif deployment_mechanism == "native":
             trial = native_trial
             print(f"Trial {trial}")
             native_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = run_time_experiment(native_cmd, time_metrics)
-                    trial_metrics_rows = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, time_metrics_short_names)
+                    trial_metrics = run_time_experiment(native_cmd)
+                    trial_metrics_rows = prepare_trial_data_as_csv_rows(deployment_mechanism, trial, start_time, trial_metrics, time_metrics_short_names)
                     metrics.extend(trial_metrics_rows)
                     break
                 except Exception as e:
@@ -270,12 +269,23 @@ def collect_time_data(n, time_metrics, results_filename, container_exec_cmd, con
     field_names = CSV_BASIC_FIELD_NAMES + time_metrics_short_names
     write_metrics_to_csv(results_filename, field_names, metrics)
 
-def prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics_sets, metrics_keys, allow_missing_metrics=False):
-    # trial_metrics_sets is a list of tuples in format ("special_identifier", trial_metrics_set)
-    # where trial_metrics_set is a list consisting of the trial metrics themselves
-    # Used so can store different types of metrics for the same experiment type, eg. for
-    # container perf experiment we want to store one set of metrics for the container
-    # and another for the Docker overhead
+def prepare_trial_data_as_csv_rows(deployment_mechanism, trial, start_time, trial_metrics_sets, metric_names, allow_missing_metrics=False):
+    """Prepares the data of a trial, formatting it in a way allowing it to be written as a CSV row later.
+
+    Args:
+        deployment_mechanism: The deployment mechanism used for the trial
+        trial: The trial number
+        start_time: The start time of the trial
+        trial_metrics_sets: A list of tuples in format ("special_identifier", trial_metrics_set)
+            where trial_metrics_set is a list consisting of the trial metrics themselves. This format
+            is used so we can store different types of metrics for the same experiment type, e.g. for
+            container perf experiment we want to store one set of metrics for the container and another
+            for the Docker overhead
+        metric_names: The names of the metrics to include in the CSV row
+        allow_missing_metrics: Whether to allow missing metrics or not
+    Returns:
+        A list of dictionaries, each dictionary representing a row in the CSV file
+    """
     trial_metrics_rows = []
 
     for trial_metrics_set in trial_metrics_sets:
@@ -283,16 +293,16 @@ def prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics_
         trial_metrics = trial_metrics_set[1]
     
         trial_metrics_row = {
-            "deployment-mechanism": experiment + identifier,
+            "deployment-mechanism": deployment_mechanism + identifier,
             "trial-number": trial,
             "start-time": start_time.isoformat(),
         }
 
-        for metric_key in metrics_keys:
+        for metric_name in metric_names:
             try:
-                trial_metrics_row[metric_key] = trial_metrics[metric_key]
+                trial_metrics_row[metric_name] = trial_metrics[metric_name]
             except KeyError:
-                if not (metric_key in POSSIBLE_MISSING_METRICS and allow_missing_metrics):
+                if not (metric_name in POSSIBLE_MISSING_METRICS and allow_missing_metrics):
                     raise
 
         trial_metrics_rows.append(trial_metrics_row)
@@ -300,23 +310,49 @@ def prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics_
     return trial_metrics_rows
 
 def write_metrics_to_csv(results_filename, field_names, metrics):
+    """Writes the metrics collected from the experiments to a CSV file.
+
+    Args:
+        results_filename: The name of the file to store the results in
+        field_names: The names of the fields to include in the CSV file
+        metrics: The metrics to write to the CSV file
+    """
     with open(results_filename, "w", newline="") as csv_file:
         print(f"Writing results to {results_filename}")
         writer = csv.DictWriter(csv_file, fieldnames = field_names)
         writer.writeheader()
         writer.writerows(metrics)
 
-def run_time_experiment(cmd, time_metrics):
+def run_time_experiment(cmd):
+    """Runs the time command on a given command and collects the time metrics from the output.
+    
+    Args:
+        cmd: The command to run
+    Returns:
+        A list of tuples in format ("special_identifier", trial_metrics_set), where trial_metrics_set is a dictionary
+            containing the trial metrics themselves. This format is used and expected by other functions so we can store different types 
+            of metrics for the same experiment type, e.g. for container perf experiment we want to store one set of metrics for the 
+            container and another for the Docker overhead. However, in this case, the Docker mechanism's execution time is the same 
+            regardless of whether we consider the Docker overhead or not, so we will only have one set of metrics for each mechanism 
+            and no special identifier differentiating them
+    """
     stop_cadvisor_and_prometheus_if_running()
     cmd = TIME_CMD_PREFIX.split() + cmd.split()
     time_output = run_shell_cmd_and_get_stderr(cmd)
 
-    return [("", parse_time_output(time_output, time_metrics))]
+    return [("", parse_time_output(time_output))]
 
-def parse_time_output(output, time_metrics):
+def parse_time_output(output):
+    """Parses the output of the time command and collects the time metrics from it.
+
+    Args:
+        output: The output of the time command
+    Returns:
+        A dictionary containing the time metrics
+    """
     metrics = {}
     for line in output.split("\n"):
-        for metric in time_metrics:
+        for metric in TIME_METRICS:
             metric_actual_name = metric[0]
             metric_new_name = metric[1]
 
@@ -338,8 +374,23 @@ def parse_time_output(output, time_metrics):
 
     return metrics
 
-def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, 
+def collect_perf_data(n, results_filename, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, 
     allow_missing_metrics, deployment_mechanisms):
+    """Runs the performance experiments (measuring performance metrics besides time) and collects the relevant data from Prometheus, 
+    storing it in the specified file.
+
+    Args:
+        n: The number of trials to run for each deployment mechanism
+        results_filename: The name of the file to store the results in
+        container_exec_cmd: The command to execute the workload in the container, for the Docker mechanism
+        container_start_cmd: The command to start the container, for the Docker mechanism
+        wasm_interpreted_cmd: The command to run the workload for the WebAssembly interpreted mechanism
+        wasm_aot_cmd: The command to run the workload for the WebAssembly AOT mechanism
+        native_cmd: The command to run the workload as a standalone native binary, for the native mechanism
+        allow_missing_metrics: Whether to allow missing metrics or not
+        deployment_mechanisms: The list of deployment mechanisms to use
+    """
+
     # Randomly intersperse experiments of each type
     experiments = []
     if "docker" in deployment_mechanisms:
@@ -371,15 +422,14 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
             docker_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, container_start_cmd)
+                    trial_metrics = run_container_perf_experiment(container_exec_cmd, container_start_cmd)
                     remove_container_and_its_prometheus_data(CONTAINER_NAME)
                     trial_metrics_row = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, 
-                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_metrics)
+                        PERF_EVENTS + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_metrics)
                     metrics.extend(trial_metrics_row)
                     break
                 except Exception as e:
                     print(f"Error during docker trial {trial}, attempt {attempt + 1}: {e}")
-                    print(trial_metrics)
                     remove_container(CONTAINER_NAME)
                     if attempt == MAX_RETRIES - 1:
                         raise
@@ -389,14 +439,13 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
             wasm_interpreted_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = run_non_container_perf_and_memory_experiment(perf_events, wasm_interpreted_cmd)
+                    trial_metrics = run_non_container_perf_experiment(wasm_interpreted_cmd)
                     trial_metrics_row = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, 
-                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_metrics)
+                        PERF_EVENTS + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_metrics)
                     metrics.extend(trial_metrics_row)
                     break
                 except Exception as e:
                     print(f"Error during wasm_interpreted trial {trial}, attempt {attempt + 1}: {e}")
-                    print(trial_metrics)
                     cleanup_custom_cgroup()
                     if attempt == MAX_RETRIES - 1:
                         raise
@@ -406,14 +455,13 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
             wasm_aot_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = run_non_container_perf_and_memory_experiment(perf_events, wasm_aot_cmd)
+                    trial_metrics = run_non_container_perf_experiment(wasm_aot_cmd)
                     trial_metrics_row = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, 
-                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_metrics)
+                        PERF_EVENTS + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_metrics)
                     metrics.extend(trial_metrics_row)
                     break
                 except Exception as e:
                     print(f"Error during wasm_aot trial {trial}, attempt {attempt + 1}: {e}")
-                    print(trial_metrics)
                     cleanup_custom_cgroup()
                     if attempt == MAX_RETRIES - 1:
                         raise
@@ -423,38 +471,40 @@ def collect_perf_data(n, perf_events, results_filename, container_exec_cmd, cont
             native_trial += 1
             for attempt in range(MAX_RETRIES):
                 try:
-                    trial_metrics = run_non_container_perf_and_memory_experiment(perf_events, native_cmd)
-                    #delete_prometheus_series_given_id(f"/{CUSTOM_CGROUP_NAME}") TODO: check if this was necessary
+                    trial_metrics = run_non_container_perf_experiment(native_cmd)
                     trial_metrics_row = prepare_trial_data_as_csv_rows(experiment, trial, start_time, trial_metrics, 
-                        perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_metrics)
+                        PERF_EVENTS + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES, allow_missing_metrics)
                     metrics.extend(trial_metrics_row)
                     break
                 except Exception as e:
                     print(f"Error during native trial {trial}, attempt {attempt + 1}: {e}")
-                    print(trial_metrics)
                     cleanup_custom_cgroup()
                     if attempt == MAX_RETRIES - 1:
                         raise
     
     # Write the results into a CSV
-    field_names = CSV_BASIC_FIELD_NAMES + perf_events + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES
+    field_names = CSV_BASIC_FIELD_NAMES + PERF_EVENTS + MEMORY_FIELD_NAMES + CPU_FIELD_NAMES
     write_metrics_to_csv(results_filename, field_names, metrics)
 
-    stop_cadvisor_and_prometheus()
+    stop_cadvisor_and_prometheus_if_running()
 
 def start_cadvisor_and_prometheus():
+    """Starts cAdvisor and Prometheus in the background."""
     start_cadvisor()
     start_prometheus()
     global cadvisor_and_prometheus_running
     cadvisor_and_prometheus_running = True
 
 def start_prometheus():
+    """Starts Prometheus in the background."""
     run_shell_cmd_in_background(PROMETHEUS_START_CMD.split())
 
 def start_cadvisor():
+    """Starts cAdvisor in the background."""
     run_shell_cmd_in_background(CADVISOR_START_CMD.split())
 
 def start_cadvisor_and_prometheus_if_not_running():
+    """Starts cAdvisor and Prometheus if they are not already running."""
     global cadvisor_and_prometheus_running
     if not cadvisor_and_prometheus_running:
         start_cadvisor_and_prometheus()
@@ -463,24 +513,39 @@ def start_cadvisor_and_prometheus_if_not_running():
     time.sleep(CADVISOR_PROMETHEUS_WAIT_TIME)
 
 def stop_cadvisor_and_prometheus():
+    """Stops cAdvisor and Prometheus."""
     stop_cadvisor()
     stop_prometheus()   
     global cadvisor_and_prometheus_running
     cadvisor_and_prometheus_running = False
 
 def stop_prometheus():
+    """Stops Prometheus."""
     run_shell_cmd(PROMETHEUS_STOP_CMD.split())
 
 def stop_cadvisor():
+    """Stops cAdvisor."""
     run_shell_cmd(CADVISOR_STOP_CMD.split())
 
 def stop_cadvisor_and_prometheus_if_running():
+    """Stops cAdvisor and Prometheus if they are running."""
     global cadvisor_and_prometheus_running
     if cadvisor_and_prometheus_running:
         stop_cadvisor_and_prometheus()
-        
 
-def run_non_container_perf_and_memory_experiment(perf_events, cmd): 
+def run_non_container_perf_experiment(cmd): 
+    """Run a performance experiment for a non-container deployment mechanism, such as WebAssembly or native, 
+    and collect the relevant data from Prometheus.
+
+    Args:
+        cmd: The command to run for the experiment
+    Returns:
+        A list of tuples in format ("special_identifier", trial_metrics_set), where trial_metrics_set is a dictionary
+            containing the trial metrics themselves. This format is used and expected by other functions so we can store different types 
+            of metrics for the same experiment type, e.g. for container perf experiment we want to store one set of metrics for the 
+            container and another for the Docker overhead. However, in this case, non-container mechanisms
+            don't have different types of metrics, so we will only have one set of metrics for each mechanism
+    """
     start_cadvisor_and_prometheus_if_not_running()
 
     # Create the cgroup that the process will be assigned to
@@ -500,7 +565,6 @@ def run_non_container_perf_and_memory_experiment(perf_events, cmd):
     metrics = {}
 
     for query, label in zip(PROMETHEUS_PERF_AND_MEMORY_QUERIES, PROMETHEUS_QUERIES_LABELS):
-        # TODO: standardize whether or not we're using / at the start of name or id more properyl
         formatted_query = query.format(name_or_id=f"/{CUSTOM_CGROUP_NAME}", 
             container_duration_ms=execution_duration_ms, end_container_timestamp=end_timestamp)
         metrics.update(get_parsed_prometheus_query_results(formatted_query, label))
@@ -509,7 +573,19 @@ def run_non_container_perf_and_memory_experiment(perf_events, cmd):
 
     return [("", metrics)]
 
-def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, container_start_cmd):
+def run_container_perf_experiment(container_exec_cmd, container_start_cmd):
+    """Run a performance experiment for the Docker deployment mechanism,
+    and collect the relevant data from Prometheus.
+
+    Args:
+        container_exec_cmd: The command to execute the workload in the container
+        container_start_cmd: The command to start the container
+    Returns:
+        A list of tuples in format ("special_identifier", trial_metrics_set), where trial_metrics_set is a dictionary
+            containing the trial metrics themselves. This format is used and expected by other functions so we can store different types 
+            of metrics for the same experiment type, e.g. for container perf experiment we want to store one set of metrics for the 
+            container and another for the Docker overhead.
+    """
     start_cadvisor_and_prometheus_if_not_running()
 
     # Clear the daemon's cgroup first, so maximum memory usage is not affected by memory
@@ -579,10 +655,20 @@ def run_container_perf_and_memory_experiment(perf_events, container_exec_cmd, co
         ("_container_and_daemon_extra_overhead", container_and_daemon_extra_overhead_metrics)]
 
 def stop_container(container_name):
+    """Stops a container with the given name.
+
+    Args:
+        container_name: The name of the container to stop
+    """
     cmd = CONTAINER_STOP_CMD.format(container_name=container_name).split()
     run_shell_cmd(cmd)
 
 def remove_container(container_name):
+    """Removes a container with the given name.
+
+    Args:
+        container_name: The name of the container to remove
+    """
     cmd = CONTAINER_REMOVE_CMD.format(container_name=container_name).split()
 
     try:
@@ -595,10 +681,22 @@ def remove_container(container_name):
             raise
 
 def remove_container_and_its_prometheus_data(container_name):
+    """Removes a container with the given name, and deletes its Prometheus data.
+
+    Args:
+        container_name: The name of the container to remove
+    """
     remove_container(container_name)
     delete_prometheus_series_given_name(container_name)
 
 def get_cgroup_id_for_container(container_name):
+    """Gets the cgroup ID for a container with the given name.
+
+    Args:
+        container_name: The name of the container
+    Returns:
+        The cgroup ID for the container
+    """
     cmd = CONTAINER_INSPECT_ID_CMD.format(container_name=container_name).split()
     # We first strip whitespace from the command, then strip the single quotes from the output
     # Otherwise the last single quote will not be caught
@@ -610,16 +708,50 @@ def get_cgroup_id_for_container(container_name):
         return f"memory/docker/{container_id}"
 
 def run_shell_cmd_and_get_stdout(cmd):
-    return subprocess.run(cmd, check=True, text=True, stdout=subprocess.PIPE, 
-        stderr=subprocess.PIPE).stdout
+    """Runs a shell command and returns its output.
+
+    Args:
+        cmd: The command to run
+    Returns:
+        The output of the command
+    """
+    try:
+        result = subprocess.run(cmd, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing command: {' '.join(cmd)}")
+        print(f"Return code: {e.returncode}")
+        print(f"Output: {e.output}")
+        print(f"Error: {e.stderr}")
+        raise
 
 def run_shell_cmd_and_get_stderr(cmd):
-    return subprocess.run(cmd, check=True, text=True, stdout=subprocess.DEVNULL, 
-        stderr=subprocess.PIPE).stderr
+    """Runs a shell command and returns its output to stderr.
+
+    Args:
+        cmd: The command to run
+    Returns:
+        The output of the command
+    """
+    # Use stdout=subprocess.DEVNULL to suppress the output to stdout
+    try:
+        result = subprocess.run(cmd, check=True, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        return result.stderr
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing command: {' '.join(cmd)}")
+        print(f"Return code: {e.returncode}")
+        print(f"Output: {e.output}")
+        print(f"Error: {e.stderr}")
+        raise
 
 def run_shell_cmd(cmd):
+    """Runs a shell command.
+
+    Args:
+        cmd: The command to run
+    """
     try:
-        result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except subprocess.CalledProcessError as e:
         print(f"Error executing command: {' '.join(cmd)}")
         print(f"Return code: {e.returncode}")
@@ -628,14 +760,40 @@ def run_shell_cmd(cmd):
         raise
 
 def run_shell_cmd_in_background(cmd):
-    subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL)
+    """Runs a shell command in the background.
+
+    Args:
+        cmd: The command to run
+    """
+    try:
+        # Use stdout=subprocess.DEVNULL and stderr=subprocess.DEVNULL to suppress the output
+        # to stdout and stderr
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing command: {' '.join(cmd)}")
+        print(f"Return code: {e.returncode}")
+        print(f"Output: {e.output}")
+        print(f"Error: {e.stderr}")
+        raise
 
 def query_prometheus(query):
+    """Queries Prometheus with a given query string.
+
+    Args:
+        query: The query string 
+    Returns:
+        The result of the query
+    """
     params = {"query": query}
     return query_prometheus_with_params(params)
 
 def query_prometheus_with_params(params):
+    """Queries Prometheus with given parameters.
+    Args:
+        params: The parameters to include in the query
+    Returns:
+        The result of the query
+    """
     response = requests.get(f"{PROMETHEUS_URL}/api/v1/query", 
         params)
     data = response.json()
@@ -644,18 +802,28 @@ def query_prometheus_with_params(params):
     return data["data"]["result"]
 
 def delete_prometheus_series_given_name(name):
-    """Deletes Prometheus data for series with a given name. This function is
-    required because sometimes, metrics collected from the execution of
-    eg. a container from a previous trial can persist."""
+    """Deletes Prometheus data for series with a given name.
+    
+    Args:
+        name: The name of the series to delete
+    """
     match = f"{{name='{name}'}}"
     delete_prometheus_series(match)
 
 def cleanup_custom_cgroup():
+    """Cleans up the custom cgroup created for non-Docker experiments."""
     if cgroup_exists(CUSTOM_CGROUP_NAME):
         run_shell_cmd(DELETE_CGROUP_CMD.split())
     delete_prometheus_series_given_id(CUSTOM_CGROUP_NAME)
 
 def cgroup_exists(cgroup_name):
+    """Checks if a cgroup with the given name exists.
+
+    Args:
+        cgroup_name: The name of the cgroup to check
+    Returns:
+        True if the cgroup exists, False otherwise
+    """
     # For cgroup v1, check in /sys/fs/cgroup/memory/cgroup_name
     path_v1 = f"/sys/fs/cgroup/memory/{cgroup_name}"
     # For cgroup v2, typically the unified hierarchy is mounted at /sys/fs/cgroup
@@ -664,27 +832,53 @@ def cgroup_exists(cgroup_name):
     return os.path.exists(path_v1) or os.path.exists(path_v2)
 
 def cleanup_daemon_cgroup():
+    """Cleans up the Docker daemon's cgroup.""" 
+    
     delete_prometheus_series_given_id(DAEMON_ID)
 
 def delete_prometheus_series_given_id(id):
-    """Deletes Prometheus data for series with a given name. This function is
-    required because metrics collected from the execution of
-    eg. a process within the same cgroup from a previous trial can persist."""
+    """Deletes Prometheus data for series with a given ID.
+    
+    Args:
+        id: The ID of the series to delete
+    """
     match = f"{{id='{id}'}}"
     delete_prometheus_series(match)
 
 def delete_prometheus_series(match):
+    """Deletes Prometheus data for series matching a given match string.
+
+    Args:
+        match: The match string 
+    """
     params = {"match[]": match}
     response = requests.post(f"{PROMETHEUS_URL}/api/v1/admin/tsdb/delete_series", params=params)
     if response.status_code != 204:
         raise Exception("Error: Prometheus series deletion failed")
 
 def get_parsed_prometheus_query_results(query, label=None):
+    """Queries Prometheus with a given query string and parses the output.
+
+    Args:
+        query: The query string 
+        label: The label to use for the metric being queried (only if the query string
+            is for a single metric)
+    Returns:
+        A dictionary containing the parsed metrics
+    """
     data = query_prometheus(query)
     return parse_prometheus_output(data, label)
 
 def parse_prometheus_output(output, label=None):
-    # TODO: detect if instruction not counted and inform user
+    """Parses the output of a Prometheus query and collects the metrics from it.
+
+    Args:
+        output: The output of the Prometheus query
+        label: The label to use for the metric being queried (only if the query string
+            is for a single metric)
+    Returns:
+        A dictionary containing the parsed metrics
+    """
     metrics = {}
     for entry in output:
         metric = entry["metric"]
@@ -727,6 +921,7 @@ def main():
     model_path = f"models/{model}"
     input_path = f"inputs/{input_file}"
 
+    # The name of the Docker image to use
     img_name = IMG_NAME_TEMPLATE.format(arch=arch)
 
     # The command to execute the workload inside the container
@@ -746,19 +941,18 @@ def main():
     # The command to execute for the native deployment mechanism
     native_cmd = f"{NATIVE_BINARY_PATH} {model_path} {input_path}"
 
+    # The name of the file to store the results in
     results_filename_prefix = f"{model}-{input_file}"
     results_filename_prefix = results_filename_prefix.replace(".", "_")
-
     results_filename_prefix_with_path = os.path.join(RESULTS_DIR, set_name, results_filename_prefix)
 
     try:
         print("CURRENT TIME", datetime.now(timezone.utc))
         print("CURRENT TIME", datetime.now(timezone.utc).timestamp())
-        # TODO: clean up custom cgroup in case previous execution did not terminate properly
-        collect_perf_data(trials, PERF_EVENTS, results_filename_prefix_with_path + PERF_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, allow_missing_metrics, mechanisms)
-        collect_time_data(trials, TIME_METRICS, results_filename_prefix_with_path + TIME_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
+        collect_perf_data(trials, results_filename_prefix_with_path + PERF_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, allow_missing_metrics, mechanisms)
+        collect_time_data(trials, results_filename_prefix_with_path + TIME_RESULTS_FILENAME_SUFFIX, container_exec_cmd, container_start_cmd, wasm_interpreted_cmd, wasm_aot_cmd, native_cmd, mechanisms)
     finally:
-        stop_cadvisor_and_prometheus()
+        stop_cadvisor_and_prometheus_if_running()
 
 if __name__ == "__main__":
     main()

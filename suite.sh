@@ -22,8 +22,8 @@ function prompt_user_for_target_details_if_not_set() {
 function prompt_user_for_target_details() {
     # Prompt the user for the login details of the target machine
     read -p "Enter the target machine's address: " target_address
-    read -p "Enter the target machine's username: " target_username
-    read -s -p "Enter the target machine's password: " target_password
+    read -p "Enter the username to log into the target machine (this username must have admin permissions): " target_username
+    read -s -p "Enter the password for the user with the given username: " target_password
     echo
 }
 
@@ -81,16 +81,18 @@ function prompt_user_for_action() {
     while true; do
         echo "What would you like to do?"
             echo "1. Run the entire suite from start to finish"
-            echo "2. Perform specific steps"
+            echo "2. Select specific steps to run"
             echo "3. Set/change target machine details"
-            echo "4. Exit"
+            echo "4. Read an explanation of the suite"
+            echo "5. Exit"
         local action
         read -p "Enter the number identifying the action you would like to perform: " action
         case $action in
             1) run_suite ;;
             2) prompt_user_for_specific_steps ;;
             3) prompt_user_for_target_details ;;
-            4) exit 0 ;;
+            4) explain_suite ;;
+            5) exit 0 ;;
             *) echo "Invalid option." ;;
         esac
     done
@@ -110,7 +112,7 @@ function run_suite() {
 function prompt_user_for_specific_steps() {
     # Prompt the user for specific actions they would like to perform
     while true; do
-        echo "What would you like to do?"
+        echo "What would you like to do? Note that you should not run a step unless the previous one has been run in the past."
             echo "1. Acquire files to transfer to target machine"
             echo "2. Transfer files to target machine"
             echo "3. Setup target machine"
@@ -135,6 +137,23 @@ function prompt_user_for_specific_steps() {
 
 function acquire_files() {
     # Acquire the files needed for experiments to be performed on the target machine
+    echo "Acquiring files for experiments..."
+
+    echo "Would you like to delete the architecture-specific files from previous runs?"
+    echo "You must do this if you are acquiring files for a target device with an architecture different from the previous target devices used."
+        echo "1. Yes"
+        echo "2. No"
+    while true; do
+        local delete_files_input
+        read -p "Enter the number identifying your choice: " delete_files_input
+        case $delete_files_input in
+            1) rm -rf native/torch_image_classification libtorch/bin libtorch/include libtorch/lib libtorch/share \
+                cadvisor/cadvisor prometheus/prometheus docker/*.tar wasmedge/bin wasmedge/include wasmedge/lib64 wasmedge/plugin; break ;;
+            2) break ;;
+            *) echo "Invalid option." ;;
+        esac
+    done
+
     prompt_user_for_architecture_if_not_set
     setup_qemu_if_required
 
@@ -143,15 +162,25 @@ function acquire_files() {
     
     generate_model_files
 
-    case $arch in
-        "arm64") acquire_files_arm64_specific ;;
-        "amd64") acquire_files_amd64_specific ;;
+    case $arch in 
+        "arm64") 
+            download_libtorch_arm64
+            wasmedge_image="wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps"
+            ;;
+        "amd64") 
+            download_libtorch_amd64
+            wasmedge_image="wasmedge/wasmedge:manylinux_2_28_x86_64-plugins-deps"
+            ;;
     esac
 
+    build_wasmedge
     build_cadvisor
     download_prometheus 
     build_docker_and_native 
     compile_wasm 
+
+    echo "Finished acquiring files for experiments!"
+    echo "Note that if you want to add more models and inputs not included by the suite, you can do so by adding them to the models and inputs directories, respectively."
 }
 
 function setup_qemu_if_required() {
@@ -173,6 +202,7 @@ function setup_qemu() {
     if [ ! -f /usr/bin/qemu-aarch64-static ]; then
         echo "Setting up QEMU for cross-compilation..."
         docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        echo "QEMU setup complete!"
     fi
 }
 
@@ -184,8 +214,10 @@ function install_rust() {
             echo "2. No"
         read -p "Enter the number identifying your choice: " choice
         if [ "$choice" = "1" ]; then
+            echo "Installing Rust..."
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
             source $HOME/.cargo/env
+            echo "Rust installed successfully!"
         else
             echo "Please install Rust manually and re-run this script."
             exit 1
@@ -201,22 +233,26 @@ function install_python_and_dependencies() {
             echo "2. No"
         read -p "Enter the number identifying your choice: " choice
         if [ "$choice" = "1" ]; then
+            echo "Installing Python3..."
             if [ "$(uname -s)" != "Darwin" ]; then
                 sudo apt install python3 python3-pip python3-venv
             else 
                 # For Macs
                 brew install python3
             fi
+            echo "Python3 installed successfully!"
         else
             echo "Please install Python3 manually and re-run this script."
             exit 1
         fi        
     fi
 
+    echo "Loading Python3 virtual environment..."
     python3 -m venv myenv
     source myenv/bin/activate
 
     pip install -r python/host/requirements.txt
+    echo "Python3 virtual environment loaded successfully!"
 }
 
 function generate_model_files() {
@@ -323,21 +359,8 @@ function generate_mobilenet_model() {
     cd -
 }
 
-function acquire_files_arm64_specific() {
-    # Acquire files specific to the arm64 architecture
-    download_libtorch_arm64 
-    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_aarch64-plugins-deps" 
-}
-
-function acquire_files_amd64_specific() {
-    # Acquire files specific to the amd64 architecture
-    download_libtorch_amd64
-    build_wasmedge "wasmedge/wasmedge:manylinux_2_28_x86_64-plugins-deps"
-}
-
 function build_wasmedge() {
     # Build WasmEdge with the PyTorch plugin
-    local image="$1" # The name of the Docker image to use for building WasmEdge
 
     echo "Building WasmEdge..."
 
@@ -355,14 +378,14 @@ function build_wasmedge() {
     mkdir -p "$build_dir"
 
     # The build will randomly fail sometimes so we retry until it succeeds
-    docker pull --platform "$platform" "$image"
+    docker pull --platform "$platform" "$wasmedge_image"
     until sudo docker run --platform "$platform" --rm \
         --entrypoint /bin/bash \
         -v "$(pwd)/$build_dir":/root/wasmedge-install \
         -v "$(pwd)/WasmEdge":/root/wasmedge \
         -v "$(pwd)/libtorch":/root/libtorch \
         -v "$(pwd)/build_scripts/wasmedge/inside_docker_${arch}.sh":/root/inside_docker.sh \
-        "$image" -c "git config --global --add safe.directory /root/wasmedge && /root/inside_docker.sh"
+        "$wasmedge_image" -c "git config --global --add safe.directory /root/wasmedge && /root/inside_docker.sh"
     do
         echo "WasmEdge build failed. Retrying..."
     done
@@ -588,7 +611,8 @@ function run_setup_script_manually_prompt() {
     echo "If the target is on a Mac, please run the script on the target as follows instead: sudo /home/$target_username/Desktop/$SUITE_NAME/target_scripts/setup.sh -m"
 
     echo "You may need to disconnect the target machine's Ethernet connection to allow it to connect to the Internet."
-    read -p "Press enter to continue once you have run the script on the target machine."
+    echo "Press enter to continue once you have run the script on the target machine."
+    read -p 
 }
 
 function run_data_collection() {
@@ -658,7 +682,13 @@ function run_data_analysis() {
     local set_name
     read -p "Enter the name of the set of experiments to analyze: " set_name
 
-    run_per_experiment_data_analysis "$set_name"
+    local analyzed_results_dir 
+    read -p "Enter the name of the directory to create within results/$set_name where the analyzed results will be stored (default: analyzed_results): " analyzed_results_dir
+    if [ -z "$analyzed_results_dir" ]; then
+        analyzed_results_dir="analyzed_results"
+    fi
+
+    run_per_experiment_data_analysis "$set_name" "$analyzed_results_dir"
 
     echo "Would you like to perform aggregate analysis on the entire set of experiments, using the results of the previous analyses?"
         echo "1. Yes"
@@ -668,7 +698,7 @@ function run_data_analysis() {
         local aggregate_analysis
         read -p "Enter the number identifying your choice: " aggregate_analysis
         case $aggregate_analysis in
-            1) run_aggregate_data_analysis "$set_name"; break ;;
+            1) run_aggregate_data_analysis "$set_name" "$analyzed_results_dir"; break ;;
             2) break ;;
             *) echo "Invalid option. Please try again." ;;
         esac
@@ -680,9 +710,12 @@ function run_data_analysis() {
 function run_per_experiment_data_analysis() { 
     # Run data analysis for each experiment in a specified set
     set_name="$1"
+    analyzed_results_dir="$2"
+
+    echo "Running data analysis for each experiment in the set..."
 
     local significance_level
-    read -p "Enter the significance level to be used for the analysis (if nothing is entered, the default of 0.05 will be used): " significance_level
+    read -p "Enter the significance level to be used for the analysis (default: 0.05): " significance_level
     if [ -z "$significance_level" ]; then
         significance_level=0.05
     fi
@@ -766,10 +799,15 @@ function run_per_experiment_data_analysis() {
             --docker-overhead-view "$docker_overhead" \
             --mechanisms "$mechanisms" \
             --metrics "$metrics" \
+            --analyzed-results-dir "$analyzed_results_dir" \
             $options 
-        echo "Analysis complete. Press Enter to continue to the next experiment..."
+        echo "Analysis complete."
+        echo "Press Enter to continue to the next experiment..."
         read -r
     done
+
+    echo "Finished running data analysis for each experiment in the set!"
+    echo "The results of the analysis are stored in the results/$set_name/analyzed_results directory."
 }
 
 function prompt_user_for_mechanisms() {
@@ -842,6 +880,9 @@ function list_models_and_inputs() {
 function run_aggregate_data_analysis() {
     # Run aggregate data analysis on the results of the analysis of a set of experiments
     set_name="$1"
+    analyzed_results_dir="$2"
+
+    echo "Running aggregate data analysis for the set of experiments..."
 
     prompt_user_for_metrics "$set_name"
 
@@ -924,7 +965,43 @@ function run_aggregate_data_analysis() {
     python3 data_scripts/analyze_aggregate_data.py \
         --experiment-set "$set_name" \
         --metrics "$metrics" \
+        --analyzed-results-dir "$analyzed_results_dir" \
         $options
+
+    echo "Finished running aggregate data analysis for the set of experiments!"
+    echo "The results of the analysis are stored in the results/$set_name/analyzed_results directory."
+}
+
+function explain_suite() {
+    # Explain how the suite works
+
+    cat << EOF
+This suite is designed to automate the process of characterizing the performance of edge ML inference
+on a target machine using different deployment mechanisms, namely Docker, interpreted WebAssembly, ahead-of-time
+(AOT)-compiled WebAssembly, and native. Currently, it only supports conducting performance characterization for
+image classification tasks.
+
+This includes the following steps:
+1. Acquiring the files necessary for experiments to be run on the target machine, including models, the ML library,
+   the Docker image, binaries containing ML inference code, and applications for performance monitoring.
+2. Transferring to the target machine all the files it requires to run the experiments.
+3. Setting up the target machine to enable it to run the experiments, including installing dependencies and performing
+   ahead-of-time compilation of the WebAssembly binary.
+4. Running a named set of experiments on the target machine to collect data. In essence, for each combination of models and inputs
+   transferred over, as stored in the models and inputs directories, an experiment will be run consisting of 20 trials for
+   each deployment mechanism. Each trial involves executing ML inference on the given input using the given model through
+   the deployment mechanism (e.g. for Docker, by executing a container that performs this inference). Data on performance
+   metrics associated with this inference, such as wall time, memory usage, and instructions retired will be collected and stored
+   in result files.
+5. Retrieving the results of a set of experiments from the target machine to the host machine you are running this script from.
+6. Analyzing the results of a set of experiments. This includes determining if there are statistically significant differences
+   between the performance of different deployment mechanisms; generating plots to chart the performance of different mechanisms
+   for each metric; and generating plots to chart how each mechanism's performance on a given metric varies across different models or inputs.
+
+Note that if the models and inputs provided by the suite are insufficient, you may add your own to the models and inputs folders.
+Additionally, if you wish to include more lower-level performance metrics to measure, you may modify the perf_config.json file in the
+cadvisor directory.
+EOF
 }
 
 main
