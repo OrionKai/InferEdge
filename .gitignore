@@ -1,4 +1,4 @@
-models/*.pt
+models/models
 libtorch/bin
 libtorch/include
 libtorch/lib
@@ -15,4 +15,3 @@ wasmedge/plugin
 wasm/*.wasm
 docker/*.tar
 native/*
-results/same*

@@ -195,10 +195,11 @@ def analyze_data_significant_difference(df, significance_level, metrics, model, 
             print_if_true(f"{deployment_mechanism_x} average: {x_mean:.2f} (95% CI: {x_ci[0]:.2f} to {x_ci[1]:.2f})", view_output)
             print_if_true(f"{deployment_mechanism_y} average: {y_mean:.2f} (95% CI: {y_ci[0]:.2f} to {y_ci[1]:.2f})", view_output)
             print_if_true(ratio_message, view_output)
+            print_if_true("", view_output)
 
         if save_output:
             # Save the comparison dataframe to a CSV file
-            comparison_csv_filename = f"{model}_{input}_{deployment_mechanism_x}_{deployment_mechanism_y}_comparison.csv"
+            comparison_csv_filename = f"{model}-{input}-{deployment_mechanism_x}-{deployment_mechanism_y}-comparison.csv"
             comparison_csv_path = os.path.join(analyzed_results_path, comparison_csv_filename)
 
             # Enclose everything in quotes, since otherwise importing them into e.g. Excel might

@@ -147,7 +147,7 @@ function acquire_files() {
         local delete_files_input
         read -p "Enter the number identifying your choice: " delete_files_input
         case $delete_files_input in
-            1) rm -rf native/torch_image_classification libtorch/bin libtorch/include libtorch/lib libtorch/share \
+            1) sudo rm -rf WasmEdge native/torch_image_classification libtorch/bin libtorch/include libtorch/lib libtorch/share \
                 cadvisor/cadvisor prometheus/prometheus docker/*.tar wasmedge/bin wasmedge/include wasmedge/lib64 wasmedge/plugin; break ;;
             2) break ;;
             *) echo "Invalid option." ;;
@@ -198,12 +198,10 @@ function setup_qemu_if_required() {
 }
 
 function setup_qemu() {
-    # Setup QEMU for cross-compilation if it is not already set up
-    if [ ! -f /usr/bin/qemu-aarch64-static ]; then
-        echo "Setting up QEMU for cross-compilation..."
-        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-        echo "QEMU setup complete!"
-    fi
+    # Setup QEMU for cross-compilation
+    echo "Setting up QEMU for cross-compilation..."
+    docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+    echo "QEMU setup complete!"
 }
 
 function install_rust() {
@@ -247,6 +245,8 @@ function install_python_and_dependencies() {
         fi        
     fi
 
+    # Check if virtualenv already activated
+
     echo "Loading Python3 virtual environment..."
     python3 -m venv myenv
     source myenv/bin/activate
@@ -259,7 +259,7 @@ function generate_model_files() {
     # Generate the model files used in the experiments
     echo "Generating model files..."
 
-    mkdir -p models
+    mkdir -p models/models
 
     generate_mobilenet_model
     generate_efficientnet_models
@@ -298,9 +298,14 @@ function generate_efficientnet_models() {
         esac
     done
 
-    cd models
+    if [ ${#efficientnet_models[@]} -eq 0 ]; then
+        echo "No EfficientNet models selected. Skipping generation."
+        return
+    fi
+
+    cd models/models
     echo "Generating EfficientNet models..."
-    python3 ../host_scripts/model_generation/gen_efficientnet_models.py "${efficientnet_models[@]}"
+    python3 ../../host_scripts/model_generation/gen_efficientnet_models.py "${efficientnet_models[@]}"
     echo "Finished generating EfficientNet models!"
     cd -
 }
@@ -329,9 +334,14 @@ function generate_resnet_models() {
         esac
     done
 
-    cd models
+    if [ ${#resnet_models[@]} -eq 0 ]; then
+        echo "No ResNet models selected. Skipping generation."
+        return
+    fi
+
+    cd models/models
     echo "Generating ResNet models..."
-    python3 ../host_scripts/model_generation/gen_resnet_models.py "${resnet_models[@]}"
+    python3 ../../host_scripts/model_generation/gen_resnet_models.py "${resnet_models[@]}"
     echo "Finished generating ResNet models!"
     cd -
 }
@@ -354,8 +364,15 @@ function generate_mobilenet_model() {
         esac
     done
 
-    cd models
-    python3 ../host_scripts/model_generation/gen_mobilenet_models.py "${mobilenet_models[@]}"
+    if [ ${#mobilenet_models[@]} -eq 0 ]; then
+        echo "No MobileNet models selected. Skipping generation."
+        return
+    fi
+
+    cd models/models
+    echo "Generating MobileNet models..."
+    python3 ../../host_scripts/model_generation/gen_mobilenet_models.py "${mobilenet_models[@]}"
+    echo "Finished generating MobileNet models!"
     cd -
 }
 
@@ -549,7 +566,7 @@ function transfer_suite_files() {
     sshpass -p "$target_password" ssh "$target_username"@"$target_address" "mkdir -p /home/$target_username/Desktop/$SUITE_NAME"
 
     # Transfer the suite files to the target machine
-    sshpass -p "$target_password" scp -r models inputs native wasm libtorch cadvisor prometheus python docker target_scripts data_scripts/collect_data.py \
+    sshpass -p "$target_password" scp -r models/models inputs/inputs native wasm libtorch cadvisor prometheus python docker target_scripts data_scripts/collect_data.py \
         "$target_username"@"$target_address":/home/"$target_username"/Desktop/"$SUITE_NAME"
 
     # Create a directory in the suite directory to store results 
@@ -573,9 +590,9 @@ function setup_target_machine() {
     # Ask the user if they want to run the script directly, in case the target
     # machine has an Internet connection, or if they want to simply transfer it in
     # case the target machine cannot access the Internet while connected to the host
-    echo "How would you like to setup the target machine? Note that running the script
-        requires that the target machine has an Internet connection. Also note that it
-        requires sudo permissions"
+    echo "How would you like to setup the target machine?"
+    echo "Note that running the script requires that the target machine has an Internet connection." 
+    echo "Also note that it requires sudo permissions."
         echo "1. Run the setup script directly on the target machine from this machine"
         echo "2. Run the setup script manually on the target machine"
 
@@ -612,7 +629,7 @@ function run_setup_script_manually_prompt() {
 
     echo "You may need to disconnect the target machine's Ethernet connection to allow it to connect to the Internet."
     echo "Press enter to continue once you have run the script on the target machine."
-    read -p 
+    read -r 
 }
 
 function run_data_collection() {
@@ -626,7 +643,17 @@ function run_data_collection() {
     read -p "Enter a name to identify this set of experiments: " set_name
 
     local trials
-    read -p "Enter the number of trials to run for each experiment: " trials
+    read -p "Enter the number of trials to run for each experiment (at least 2): " trials
+
+    while true; do
+        local trials
+        read -p "Enter the number of trials to run for each experiment (at least 2): " trials
+        if [ "$trials" -ge 2 ]; then
+            break
+        else
+            echo "Invalid number of trials. Please enter a number greater than or equal to 2."
+        fi
+    done
 
     prompt_user_for_mechanisms
 
@@ -778,7 +805,7 @@ function run_per_experiment_data_analysis() {
             local include_insig_output
             read -p "Enter the number identifying your choice: " include_insig_output
             case $include_insig_output in
-                1) options="$options --include_insignificant_output" ;;
+                1) options="$options --include-insignificant-output"; break; ;;
                 2) break ;;
                 *) echo "Invalid option. Please try again." ;;
             esac
@@ -866,12 +893,13 @@ function prompt_user_for_metrics() {
 function list_models_and_inputs() {
     # List the models and inputs available for analysis based on the data collected
     set_name="$1"
+    analyzed_results_dir="$2"
 
     echo "Based on the data collected, the following models and inputs are available for analysis:"
         # Read the aggregate results file's unique values for the first and second columns, which
         # correspond to the model and input respectively
-        models=$(cut -d ',' -f 1 results/"$set_name"/analyzed_results/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)        
-        inputs=$(cut -d ',' -f 2 results/"$set_name"/analyzed_results/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)
+        models=$(cut -d ',' -f 1 results/"$set_name"/"$analyzed_results_dir"/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)        
+        inputs=$(cut -d ',' -f 2 results/"$set_name"/"$analyzed_results_dir"/aggregate_results.csv | tail -n +2 | sort -u| paste -sd, -)
 
         echo "models: $models"
         echo "inputs: $inputs"
@@ -915,7 +943,7 @@ function run_aggregate_data_analysis() {
         esac
     done
 
-    list_models_and_inputs "$set_name"
+    list_models_and_inputs "$set_name" "$analyzed_results_dir"
 
     echo "Would you like to compare across models?"
         echo "1. Yes"

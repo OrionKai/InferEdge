@@ -52,11 +52,11 @@ function setup_wasmedge() {
     export PATH=${PATH}:/home/$USERNAME/.wasmedge/bin
 
     # Create symbolic links expected by WasmEdge in case they are missing
-    if [ ! -L "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so" ]; then
+    if [ ! -e "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so" ]; then
         ln -s "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0" "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so"
     fi
 
-    if [ ! -L "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0" ]; then
+    if [ ! -e "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0" ]; then
         ln -s "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0.1.0" "/home/$USERNAME/.wasmedge/lib64/libwasmedge.so.0"
     fi
 }

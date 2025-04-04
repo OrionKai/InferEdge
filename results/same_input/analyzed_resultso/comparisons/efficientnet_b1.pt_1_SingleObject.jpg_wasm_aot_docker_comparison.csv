@@ -1,2 +1,0 @@
-metric,wasm_aot-value,docker-value,statistically-significant,effect-size
-wall-time-seconds,9.699093332883203-10.207906667116797,10.380093790946123-11.10190620905388,True,1.04x-1.12x

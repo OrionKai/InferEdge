@@ -943,7 +943,6 @@ def main():
 
     # The name of the file to store the results in
     results_filename_prefix = f"{model}-{input_file}"
-    results_filename_prefix = results_filename_prefix.replace(".", "_")
     results_filename_prefix_with_path = os.path.join(RESULTS_DIR, set_name, results_filename_prefix)
 
     try:
