@@ -14,4 +14,4 @@ wasmedge/lib64
 wasmedge/plugin
 wasm/*.wasm
 docker/*.tar
-native/*
+native/torch_image_classification
