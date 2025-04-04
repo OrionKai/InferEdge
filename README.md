@@ -26,5 +26,5 @@ To run the suite, grant execute permissions to the script as follows:
 Then run the following command on the shell:
 `./suite.sh`
 Note that elements of this script will require sudo permissions, for example when installing
-required packages. Note that an explanation of the suite's functionality can also be found upon
+required packages. Note also that an explanation of the suite's functionality can also be found upon
 launching the suite and selecting the explanation option.
