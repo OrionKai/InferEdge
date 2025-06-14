@@ -1,4 +1,4 @@
-This repository contains code and assets for a software suite automating performance characterization of edge ML inference, developed as part of my coursework for the University of St. Andrews' CS4099 Major Software Project module. A quick summary of each subdirectory's contents is as follows:
+This repository contains code and assets for InferEdge: a software suite automating performance characterization of edge ML inference, developed as part of my coursework for the University of St. Andrews' CS4099 Major Software Project module. A quick summary of each subdirectory's contents is as follows:
 
 * build_scripts: contains shell scripts for building WasmEdge
 * cadvisor: contains an editable cAdvisor config file, and will contain the cAdvisor binary when built by the suite
